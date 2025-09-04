@@ -205,6 +205,36 @@ class GraphGen:
         loop = create_event_loop()
         loop.run_until_complete(self.async_insert())
 
+    def insert_data(self, data, data_type):
+        """Insert data directly for webui usage"""
+        loop = create_event_loop()
+        loop.run_until_complete(self.async_insert_data(data, data_type))
+
+    async def async_insert_data(self, data, data_type):
+        """Insert chunks into the graph from provided data"""
+        inserting_chunks = await self.async_split_chunks(data, data_type)
+
+        if len(inserting_chunks) == 0:
+            logger.warning("All chunks are already in the storage")
+            return
+        logger.info("[New Chunks] inserting %d chunks", len(inserting_chunks))
+
+        logger.info("[Entity and Relation Extraction]...")
+        _add_entities_and_relations = await extract_kg(
+            llm_client=self.synthesizer_llm_client,
+            kg_instance=self.graph_storage,
+            tokenizer_instance=self.tokenizer_instance,
+            chunks=[
+                Chunk(id=k, content=v["content"]) for k, v in inserting_chunks.items()
+            ],
+            progress_bar=self.progress_bar,
+        )
+        if not _add_entities_and_relations:
+            logger.warning("No entities or relations extracted")
+            return
+
+        await self._insert_done()
+
     async def async_insert(self):
         """
         insert chunks into the graph
@@ -294,6 +324,20 @@ class GraphGen:
         loop = create_event_loop()
         loop.run_until_complete(self.async_quiz())
 
+    def quiz_with_samples(self, max_samples):
+        """Quiz with specific max samples for webui usage"""
+        loop = create_event_loop()
+        loop.run_until_complete(self.async_quiz_with_samples(max_samples))
+
+    async def async_quiz_with_samples(self, max_samples):
+        await quiz(
+            self.synthesizer_llm_client,
+            self.graph_storage,
+            self.rephrase_storage,
+            max_samples,
+        )
+        await self.rephrase_storage.index_done_callback()
+
     async def async_quiz(self):
         max_samples = self.config["quiz_and_judge_strategy"]["quiz_samples"]
         await quiz(
@@ -305,6 +349,13 @@ class GraphGen:
         await self.rephrase_storage.index_done_callback()
 
     def judge(self):
+        loop = create_event_loop()
+        loop.run_until_complete(self.async_judge())
+
+    def judge_statements(self, skip=False):
+        """Judge statements with skip option for webui usage"""
+        if skip:
+            return
         loop = create_event_loop()
         loop.run_until_complete(self.async_judge())
 
@@ -321,6 +372,51 @@ class GraphGen:
     def traverse(self):
         loop = create_event_loop()
         loop.run_until_complete(self.async_traverse())
+
+    def traverse_with_strategy(self, traverse_strategy, output_data_type):
+        """Traverse with specific strategy and output type for webui usage"""
+        self.traverse_strategy = traverse_strategy
+        loop = create_event_loop()
+        loop.run_until_complete(self.async_traverse_with_strategy(output_data_type))
+
+    async def async_traverse_with_strategy(self, output_data_type):
+        if output_data_type == "atomic":
+            results = await traverse_graph_atomically(
+                self.synthesizer_llm_client,
+                self.tokenizer_instance,
+                self.graph_storage,
+                self.traverse_strategy,
+                self.text_chunks_storage,
+                self.progress_bar,
+            )
+        elif output_data_type == "multi_hop":
+            results = await traverse_graph_for_multi_hop(
+                self.synthesizer_llm_client,
+                self.tokenizer_instance,
+                self.graph_storage,
+                self.traverse_strategy,
+                self.text_chunks_storage,
+                self.progress_bar,
+            )
+        elif output_data_type == "aggregated":
+            results = await traverse_graph_by_edge(
+                self.synthesizer_llm_client,
+                self.tokenizer_instance,
+                self.graph_storage,
+                self.traverse_strategy,
+                self.text_chunks_storage,
+                self.progress_bar,
+            )
+        else:
+            raise ValueError(f"Unknown qa_form: {output_data_type}")
+
+        # Use default format for webui
+        results = format_generation_results(
+            results, output_data_format="ChatML"
+        )
+
+        await self.qa_storage.upsert(results)
+        await self.qa_storage.index_done_callback()
 
     async def async_traverse(self):
         output_data_type = self.config["output_data_type"]
