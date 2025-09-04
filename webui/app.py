@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import tempfile
+import uuid
 
 import gradio as gr
 import pandas as pd
@@ -32,11 +33,29 @@ css = """
 
 
 def init_graph_gen(config: dict, env: dict) -> GraphGen:
-    # Set up working directory
-    log_file, working_dir = setup_workspace(os.path.join(root_dir, "cache"))
+    # Set up working directory - use main cache directory instead of temp subdirectory
+    cache_dir = os.path.join(root_dir, "cache")
+    os.makedirs(cache_dir, exist_ok=True)
+    
+    log_dir = os.path.join(cache_dir, "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    request_id = str(uuid.uuid4())
+    log_file = os.path.join(log_dir, f"{request_id}.log")
+    
+    # Use main cache directory as working directory to persist graph
+    working_dir = cache_dir
 
     set_logger(log_file, if_stream=False)
-    graph_gen = GraphGen(working_dir=working_dir)
+    
+    # Create a minimal config for GraphGen initialization
+    graph_config = {
+        "tokenizer": config.get("tokenizer", "cl100k_base"),
+        "search": {"enabled": False},  # Disable search for webui
+        "input_file": config.get("input_file", ""),
+        "input_data_type": "raw"  # Default data type
+    }
+    
+    graph_gen = GraphGen(config=graph_config, working_dir=working_dir)
 
     # Set up LLM clients
     graph_gen.synthesizer_llm_client = OpenAIModel(
@@ -123,7 +142,7 @@ def run_graphgen(params, progress=gr.Progress()):
 
     # Initialize GraphGen
     graph_gen = init_graph_gen(config, env)
-    graph_gen.clear()
+    # Removed graph_gen.clear() to enable incremental knowledge accumulation
 
     graph_gen.progress_bar = progress
 
@@ -158,21 +177,21 @@ def run_graphgen(params, progress=gr.Progress()):
             raise ValueError(f"Unsupported file type: {file}")
 
         # Process the data
-        graph_gen.insert(data, data_type)
+        graph_gen.insert_data(data, data_type)
 
         if config["if_trainee_model"]:
             # Generate quiz
-            graph_gen.quiz(max_samples=config["quiz_samples"])
+            graph_gen.quiz_with_samples(max_samples=config["quiz_samples"])
 
             # Judge statements
-            graph_gen.judge()
+            graph_gen.judge_statements()
         else:
             graph_gen.traverse_strategy.edge_sampling = "random"
             # Skip judge statements
-            graph_gen.judge(skip=True)
+            graph_gen.judge_statements(skip=True)
 
         # Traverse graph
-        graph_gen.traverse(traverse_strategy=graph_gen.traverse_strategy)
+        graph_gen.traverse_with_strategy(traverse_strategy=graph_gen.traverse_strategy, output_data_type=config["traverse_strategy"]["qa_form"])
 
         # Save output
         output_data = graph_gen.qa_storage.data
@@ -215,8 +234,8 @@ def run_graphgen(params, progress=gr.Progress()):
         raise gr.Error(f"Error occurred: {str(e)}")
 
     finally:
-        # Clean up workspace
-        cleanup_workspace(graph_gen.working_dir)
+        # Note: No need to cleanup workspace since we're using main cache directory
+        pass
 
 
 with gr.Blocks(title="GraphGen Demo", theme=gr.themes.Glass(), css=css) as demo:
@@ -269,53 +288,49 @@ with gr.Blocks(title="GraphGen Demo", theme=gr.themes.Glass(), css=css) as demo:
         lang_btn.render()
 
         gr.Markdown(
-            value="# "
-            + _("Title")
-            + "\n\n"
-            + "### [GraphGen](https://github.com/open-sciencelab/GraphGen) "
-            + _("Intro")
+            value="# GraphGen\n\n### [GraphGen](https://github.com/open-sciencelab/GraphGen) Knowledge Graph-Guided Synthetic Data Generation Framework"
         )
 
         if_trainee_model = gr.Checkbox(
-            label=_("Use Trainee Model"), value=False, interactive=True
+            label="Use Trainee Model", value=False, interactive=True
         )
 
-        with gr.Accordion(label=_("Model Config"), open=False):
+        with gr.Accordion(label="Model Config", open=False):
             synthesizer_url = gr.Textbox(
                 label="Synthesizer URL",
                 value="https://api.siliconflow.cn/v1",
-                info=_("Synthesizer URL Info"),
+                info="Base URL for the synthesizer model API",
                 interactive=True,
             )
             synthesizer_model = gr.Textbox(
                 label="Synthesizer Model",
                 value="Qwen/Qwen2.5-7B-Instruct",
-                info=_("Synthesizer Model Info"),
+                info="Model name for synthetic data generation",
                 interactive=True,
             )
             trainee_url = gr.Textbox(
                 label="Trainee URL",
                 value="https://api.siliconflow.cn/v1",
-                info=_("Trainee URL Info"),
+                info="Base URL for the trainee model API",
                 interactive=True,
                 visible=if_trainee_model.value is True,
             )
             trainee_model = gr.Textbox(
                 label="Trainee Model",
                 value="Qwen/Qwen2.5-7B-Instruct",
-                info=_("Trainee Model Info"),
+                info="Model name for evaluation and assessment",
                 interactive=True,
                 visible=if_trainee_model.value is True,
             )
             trainee_api_key = gr.Textbox(
-                label=_("SiliconFlow Token for Trainee Model"),
+                label="SiliconFlow Token for Trainee Model",
                 type="password",
                 value="",
                 info="https://cloud.siliconflow.cn/account/ak",
                 visible=if_trainee_model.value is True,
             )
 
-        with gr.Accordion(label=_("Generation Config"), open=False):
+        with gr.Accordion(label="Generation Config", open=False):
             chunk_size = gr.Slider(
                 label="Chunk Size",
                 minimum=256,
@@ -400,13 +415,13 @@ with gr.Blocks(title="GraphGen Demo", theme=gr.themes.Glass(), css=css) as demo:
         with gr.Row(equal_height=True):
             with gr.Column(scale=3):
                 api_key = gr.Textbox(
-                    label=_("SiliconFlow Token"),
+                    label="SiliconFlow Token",
                     type="password",
                     value="",
                     info="https://cloud.siliconflow.cn/account/ak",
                 )
             with gr.Column(scale=1):
-                test_connection_btn = gr.Button(_("Test Connection"))
+                test_connection_btn = gr.Button("Test Connection")
 
         with gr.Blocks():
             with gr.Row(equal_height=True):
@@ -435,7 +450,7 @@ with gr.Blocks(title="GraphGen Demo", theme=gr.themes.Glass(), css=css) as demo:
             with gr.Row(equal_height=True):
                 with gr.Column(scale=1):
                     upload_file = gr.File(
-                        label=_("Upload File"),
+                        label="Upload File",
                         file_count="single",
                         file_types=[".txt", ".json", ".jsonl"],
                         interactive=True,
@@ -448,7 +463,7 @@ with gr.Blocks(title="GraphGen Demo", theme=gr.themes.Glass(), css=css) as demo:
                             [os.path.join(examples_dir, "chunked_demo.json")],
                         ],
                         inputs=upload_file,
-                        label=_("Example Files"),
+                        label="Example Files",
                         examples_per_page=3,
                     )
                 with gr.Column(scale=1):
@@ -472,7 +487,7 @@ with gr.Blocks(title="GraphGen Demo", theme=gr.themes.Glass(), css=css) as demo:
                 wrap=True,
             )
 
-        submit_btn = gr.Button(_("Run GraphGen"))
+        submit_btn = gr.Button("Run GraphGen")
 
         # Test Connection
         test_connection_btn.click(
