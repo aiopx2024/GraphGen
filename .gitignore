@@ -1,3 +1,11 @@
+# Conda environments
+.conda/
+conda-env/
+*.conda
+
+# Claude
+*.claude
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
