@@ -43,6 +43,18 @@ GraphGen: Enhancing Supervised Fine-Tuning for LLMs with Knowledge-Driven Synthe
 
 GraphGen is a framework for synthetic data generation guided by knowledge graphs. Please check the [**paper**](https://arxiv.org/abs/2505.20416) and [best practice](https://github.com/open-sciencelab/GraphGen/issues/17).
 
+### 🔍 Key Features
+
+- **Knowledge Graph-Guided Generation**: Constructs fine-grained knowledge graphs from source text to guide QA pair generation
+- **Multi-hop Reasoning**: Supports complex multi-hop neighborhood sampling to capture relational information
+- **Comprehensive Traceability**: Full source tracing from generated QA pairs back to original documents for fact verification
+- **Multiple QA Formats**: Supports Chain-of-Thought, Atomic, Aggregated, and Multi-hop QA generation
+- **Community Detection**: Uses Leiden algorithm for knowledge community identification
+- **Style Control**: Diversifies generated data through controlled style variations
+- **Multiple Backends**: Integrates with Google, Bing, Wikipedia, and UniProt search engines
+
+### 📊 Performance Results
+
 Here is post-training result which **over 50% SFT data** comes from GraphGen and our data clean pipeline.
 
 | Domain | Dataset | Ours | Qwen2.5-7B-Instruct (baseline)	|
@@ -60,6 +72,11 @@ After data generation, you can use [LLaMA-Factory](https://github.com/hiyouga/LL
 
 ## 📌 Latest Updates
 
+- **2025.09.05**: 🆕 **Major Feature**: Added comprehensive source traceability system for fact verification
+  - Full QA-to-source document mapping with metadata preservation
+  - Enhanced traverse_graph.py with complete source tracking
+  - New GraphGenTracer tool for retroactive fact checking
+  - Support for all QA formats (atomic, aggregated, multi-hop, CoT)
 - **2025.08.14**: We have added support for community detection in knowledge graphs using the Leiden algorithm, enabling the synthesis of Chain-of-Thought (CoT) data.
 - **2025.07.31**: We have added Google, Bing, Wikipedia, and UniProt as search back-ends.
 - **2025.04.21**: We have released the initial version of GraphGen.
@@ -154,7 +171,7 @@ For any questions, please check [FAQ](https://github.com/open-sciencelab/GraphGe
       # additional settings...
     ```
 
-3. Generate data
+4. Generate data with traceability
 
    Pick the desired format and run the matching script:
    
@@ -165,10 +182,24 @@ For any questions, please check [FAQ](https://github.com/open-sciencelab/GraphGe
    | `aggregated` | `bash scripts/generate/generate_aggregated.sh` | Aggregated Q\&A pairs incorporating complex, integrated knowledge |
    | `multi-hop`  | `bash scripts/generate/generate_multihop.sh`   | Multi-hop reasoning Q\&A pairs                                    |
 
+   🔍 **New**: All generated QA pairs now include comprehensive source traceability metadata!
 
-4. Get the generated data
+5. Verify QA traceability (New Feature)
+   ```bash
+   # Generate tracing report for fact verification
+   python graphgen_tracer.py
+   
+   # View source mapping for any QA pair
+   python -c "import json; print(json.load(open('cache/data/graphgen/latest/qa-*.json'))[0]['metadata']['source_tracing'])"
+   ```
+
+
+4. Get the generated data with source traceability
    ```bash
    ls cache/data/graphgen
+   
+   # View tracing reports
+   ls cache/data/graphgen/*_tracing_report.json
    ```
 
 ### Run with Docker
