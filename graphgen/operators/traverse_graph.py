@@ -19,6 +19,49 @@ from graphgen.templates import (
 from graphgen.utils import compute_content_hash, detect_main_language, logger
 
 
+async def _extract_source_metadata(_process_nodes: list, _process_edges: list, text_chunks_storage):
+    """Extract source metadata for traceability"""
+    # 收集所有source_id
+    source_ids = []
+    
+    for node in _process_nodes:
+        if "source_id" in node:
+            source_ids.extend(node["source_id"].split("<SEP>"))
+    
+    for edge in _process_edges:
+        if "source_id" in edge[2]:
+            source_ids.extend(edge[2]["source_id"].split("<SEP>"))
+    
+    # 去重
+    unique_source_ids = list(set(source_ids))
+    
+    # 获取chunk内容 - get_by_ids返回的是list
+    chunk_contents_list = await text_chunks_storage.get_by_ids(unique_source_ids)
+    chunk_contents = {}
+    doc_ids = []
+    
+    # 将list转换为dict并提取doc_ids
+    for i, chunk_id in enumerate(unique_source_ids):
+        if i < len(chunk_contents_list) and chunk_contents_list[i] is not None:
+            content = chunk_contents_list[i]
+            chunk_contents[chunk_id] = content["content"] if isinstance(content, dict) and "content" in content else str(content)
+            
+            # 提取doc_id
+            if isinstance(content, dict) and "full_doc_id" in content:
+                doc_ids.append(content["full_doc_id"])
+    
+    # 构建溯源信息
+    source_metadata = {
+        "source_chunks": unique_source_ids,
+        "chunk_contents": chunk_contents,
+        "doc_ids": list(set(doc_ids)),
+        "entities_used": [node["node_id"] for node in _process_nodes],
+        "relations_used": [(edge[0], edge[1], edge[2]["description"]) for edge in _process_edges]
+    }
+    
+    return source_metadata
+
+
 async def _pre_tokenize(
     graph_storage: NetworkXStorage, tokenizer: Tokenizer, edges: list, nodes: list
 ) -> tuple:
@@ -232,6 +275,11 @@ async def traverse_graph_by_edge(
                 logger.info("Pre-length: %s", pre_length)
                 logger.info("Question: %s", question)
                 logger.info("Answer: %s", context)
+                
+                # 提取溯源信息
+                source_metadata = await _extract_source_metadata(
+                    _process_batch[0], _process_batch[1], text_chunks_storage
+                )
 
                 return {
                     compute_content_hash(context): {
@@ -240,6 +288,17 @@ async def traverse_graph_by_edge(
                         "loss": get_average_loss(
                             _process_batch, traverse_strategy.loss_strategy
                         ),
+                        # 新增：完整的溯源信息
+                        "metadata": {
+                            "qa_type": "single",
+                            "generation_method": traverse_strategy.qa_form,
+                            "source_tracing": source_metadata,
+                            "subgraph_info": {
+                                "nodes_count": len(_process_batch[0]),
+                                "edges_count": len(_process_batch[1]),
+                                "max_depth": getattr(traverse_strategy, 'max_depth', 1)
+                            }
+                        }
                     }
                 }
 
@@ -264,6 +323,12 @@ async def traverse_graph_by_edge(
                 len(_process_batch[1]),
             )
             logger.info("Pre-length: %s", pre_length)
+            
+            # 提取溯源信息
+            source_metadata = await _extract_source_metadata(
+                _process_batch[0], _process_batch[1], text_chunks_storage
+            )
+            
             for qa in qas:
                 logger.info("Question: %s", qa["question"])
                 logger.info("Answer: %s", qa["answer"])
@@ -273,6 +338,17 @@ async def traverse_graph_by_edge(
                     "loss": get_average_loss(
                         _process_batch, traverse_strategy.loss_strategy
                     ),
+                    # 新增：完整的溯源信息
+                    "metadata": {
+                        "qa_type": "multi_hop",
+                        "generation_method": traverse_strategy.qa_form,
+                        "source_tracing": source_metadata,
+                        "subgraph_info": {
+                            "nodes_count": len(_process_batch[0]),
+                            "edges_count": len(_process_batch[1]),
+                            "max_depth": getattr(traverse_strategy, 'max_depth', 1)
+                        }
+                    }
                 }
             return final_results
 
@@ -336,9 +412,15 @@ async def traverse_graph_atomically(
         if len(node_or_edge) == 2:
             des = node_or_edge[0] + ": " + node_or_edge[1]["description"]
             loss = node_or_edge[1]["loss"]
+            source_id = node_or_edge[1].get("source_id", "")
+            is_node = True
+            entity_name = node_or_edge[0]
         else:
             des = node_or_edge[2]["description"]
             loss = node_or_edge[2]["loss"]
+            source_id = node_or_edge[2].get("source_id", "")
+            is_node = False
+            entity_name = f"{node_or_edge[0]}-{node_or_edge[1]}"
 
         async with semaphore:
             try:
@@ -361,6 +443,22 @@ async def traverse_graph_atomically(
 
                 question = question.strip('"')
                 answer = answer.strip('"')
+                
+                # 获取chunk内容用于溯源
+                source_chunks = source_id.split("<SEP>") if source_id else []
+                chunk_contents_list = await text_chunks_storage.get_by_ids(source_chunks)
+                chunk_contents = {}
+                doc_ids = []
+                
+                # 将list转换为dict并提取doc_ids
+                for i, chunk_id in enumerate(source_chunks):
+                    if i < len(chunk_contents_list) and chunk_contents_list[i] is not None:
+                        content = chunk_contents_list[i]
+                        chunk_contents[chunk_id] = content["content"] if isinstance(content, dict) and "content" in content else str(content)
+                        
+                        # 提取doc_id
+                        if isinstance(content, dict) and "full_doc_id" in content:
+                            doc_ids.append(content["full_doc_id"])
 
                 logger.info("Question: %s", question)
                 logger.info("Answer: %s", answer)
@@ -369,6 +467,23 @@ async def traverse_graph_atomically(
                         "question": question,
                         "answer": answer,
                         "loss": loss,
+                        # 新增：完整的溯源信息
+                        "metadata": {
+                            "qa_type": "atomic",
+                            "generation_method": "atomic",
+                            "source_tracing": {
+                                "source_chunks": source_chunks,
+                                "chunk_contents": chunk_contents,
+                                "doc_ids": list(set(doc_ids)),
+                                "entities_used": [entity_name] if is_node else [],
+                                "relations_used": [] if is_node else [(node_or_edge[0], node_or_edge[1], des)]
+                            },
+                            "subgraph_info": {
+                                "nodes_count": 1 if is_node else 0,
+                                "edges_count": 0 if is_node else 1,
+                                "max_depth": 1
+                            }
+                        }
                     }
                 }
             except Exception as e:  # pylint: disable=broad-except
@@ -386,7 +501,11 @@ async def traverse_graph_atomically(
         if "<SEP>" in node[1]["description"]:
             description_list = node[1]["description"].split("<SEP>")
             for item in description_list:
-                tasks.append((node[0], {"description": item, "loss": node[1]["loss"]}))
+                tasks.append((node[0], {
+                    "description": item, 
+                    "loss": node[1]["loss"],
+                    "source_id": node[1].get("source_id", "")
+                }))
         else:
             tasks.append((node[0], node[1]))
     for edge in edges:
@@ -394,7 +513,11 @@ async def traverse_graph_atomically(
             description_list = edge[2]["description"].split("<SEP>")
             for item in description_list:
                 tasks.append(
-                    (edge[0], edge[1], {"description": item, "loss": edge[2]["loss"]})
+                    (edge[0], edge[1], {
+                        "description": item, 
+                        "loss": edge[2]["loss"],
+                        "source_id": edge[2].get("source_id", "")
+                    })
                 )
         else:
             tasks.append((edge[0], edge[1], edge[2]))
@@ -501,6 +624,11 @@ async def traverse_graph_for_multi_hop(
 
                 logger.info("Question: %s", question)
                 logger.info("Answer: %s", answer)
+                
+                # 提取溯源信息
+                source_metadata = await _extract_source_metadata(
+                    _process_nodes, _process_edges, text_chunks_storage
+                )
 
                 return {
                     compute_content_hash(question): {
@@ -509,6 +637,17 @@ async def traverse_graph_for_multi_hop(
                         "loss": get_average_loss(
                             _process_batch, traverse_strategy.loss_strategy
                         ),
+                        # 新增：完整的溯源信息
+                        "metadata": {
+                            "qa_type": "multi_hop",
+                            "generation_method": traverse_strategy.qa_form,
+                            "source_tracing": source_metadata,
+                            "subgraph_info": {
+                                "nodes_count": len(_process_nodes),
+                                "edges_count": len(_process_edges),
+                                "max_depth": getattr(traverse_strategy, 'max_depth', 1)
+                            }
+                        }
                     }
                 }
 
