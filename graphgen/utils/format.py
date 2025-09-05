@@ -104,6 +104,7 @@ def format_generation_results(
                 "instruction": item["question"],
                 "input": "",
                 "output": item["answer"],
+                "metadata": item.get("metadata", {})  # 保留溯源信息
             }
             for item in list(results.values())
         ]
@@ -114,7 +115,8 @@ def format_generation_results(
                 "conversations": [
                     {"from": "human", "value": item["question"]},
                     {"from": "gpt", "value": item["answer"]},
-                ]
+                ],
+                "metadata": item.get("metadata", {})  # 保留溯源信息
             }
             for item in list(results.values())
         ]
@@ -125,7 +127,8 @@ def format_generation_results(
                 "messages": [
                     {"role": "user", "content": item["question"]},
                     {"role": "assistant", "content": item["answer"]},
-                ]
+                ],
+                "metadata": item.get("metadata", {})  # 保留溯源信息
             }
             for item in list(results.values())
         ]
