@@ -1,4 +1,5 @@
 import json
+import json
 import os
 import sys
 import tempfile
@@ -6,8 +7,12 @@ import uuid
 
 import gradio as gr
 import pandas as pd
+from dotenv import load_dotenv
 from gradio_i18n import Translate
 from gradio_i18n import gettext as _
+
+# Load environment variables from .env file
+load_dotenv()
 
 from webui.base import GraphGenParams
 from webui.cache_utils import cleanup_workspace, setup_workspace
@@ -47,6 +52,12 @@ def init_graph_gen(config: dict, env: dict) -> GraphGen:
 
     set_logger(log_file, if_stream=False)
     
+    # Temporarily set environment variables for GraphGen initialization
+    # This ensures GraphGen.__post_init__ doesn't fail
+    for key, value in env.items():
+        if value:  # Only set non-empty values
+            os.environ[key] = str(value)
+    
     # Create a minimal config for GraphGen initialization
     graph_config = {
         "tokenizer": config.get("tokenizer", "cl100k_base"),
@@ -57,7 +68,8 @@ def init_graph_gen(config: dict, env: dict) -> GraphGen:
     
     graph_gen = GraphGen(config=graph_config, working_dir=working_dir)
 
-    # Set up LLM clients
+    # Set up LLM clients with the provided parameters
+    # This will override the ones created in GraphGen.__post_init__
     graph_gen.synthesizer_llm_client = OpenAIModel(
         model_name=env.get("SYNTHESIZER_MODEL", ""),
         base_url=env.get("SYNTHESIZER_BASE_URL", ""),
