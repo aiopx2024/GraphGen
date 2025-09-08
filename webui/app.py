@@ -1,10 +1,16 @@
 import json
+import json
 import os
 import sys
 import tempfile
 
 import gradio as gr
 import pandas as pd
+from dotenv import load_dotenv
+
+# 从.env文件中加载环境变量
+# 这是解决Windows下环境变量不自动加载问题的关键步骤
+load_dotenv()
 
 from webui.base import GraphGenParams
 from webui.cache_utils import cleanup_workspace, setup_workspace
@@ -32,11 +38,37 @@ css = """
 
 
 def init_graph_gen(config: dict, env: dict) -> GraphGen:
+    """
+    初始化GraphGen实例
+    解决环境变量加载和初始化参数配置问题
+    
+    Args:
+        config: 配置字典，包含分词器等参数
+        env: 环境变量字典，包含API Key等敏感信息
+    
+    Returns:
+        初始化完成的GraphGen实例
+    """
+    # 临时设置环境变量以便GraphGen初始化
+    # 这确保了GraphGen.__post_init__不会因为缺少API Key而失败
+    for key, value in env.items():
+        if value:  # 只设置非空值
+            os.environ[key] = str(value)
+    
     # Set up working directory
     log_file, working_dir = setup_workspace(os.path.join(root_dir, "cache"))
 
     set_logger(log_file, if_stream=False)
-    graph_gen = GraphGen(working_dir=working_dir)
+    
+    # 为GraphGen初始化创建最小配置
+    graph_config = {
+        "tokenizer": config.get("tokenizer", "cl100k_base"),
+        "search": {"enabled": False},  # 为webui禁用搜索功能
+        "input_file": config.get("input_file", ""),
+        "input_data_type": "raw"  # 默认数据类型
+    }
+    
+    graph_gen = GraphGen(config=graph_config, working_dir=working_dir)
 
     # Set up LLM clients
     graph_gen.synthesizer_llm_client = OpenAIModel(
