@@ -190,21 +190,21 @@ def run_graphgen(params, progress=gr.Progress()):
             raise ValueError(f"Unsupported file type: {file}")
 
         # Process the data
-        graph_gen.insert(data, data_type)
+        graph_gen.insert_data(data, data_type)
 
         if config["if_trainee_model"]:
             # Generate quiz
-            graph_gen.quiz(max_samples=config["quiz_samples"])
+            graph_gen.quiz_with_samples(config["quiz_samples"])
 
             # Judge statements
-            graph_gen.judge()
+            graph_gen.judge_statements()
         else:
             graph_gen.traverse_strategy.edge_sampling = "random"
             # Skip judge statements
-            graph_gen.judge(skip=True)
+            graph_gen.judge_statements(skip=True)
 
         # Traverse graph
-        graph_gen.traverse(traverse_strategy=graph_gen.traverse_strategy)
+        graph_gen.traverse_with_strategy(graph_gen.traverse_strategy, config["traverse_strategy"]["qa_form"])
 
         # Save output
         output_data = graph_gen.qa_storage.data
