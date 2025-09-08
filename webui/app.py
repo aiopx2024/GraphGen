@@ -11,7 +11,8 @@ from dotenv import load_dotenv
 from gradio_i18n import Translate
 from gradio_i18n import gettext as _
 
-# Load environment variables from .env file
+# 从.env文件中加载环境变量
+# 这是解决Windows下环境变量不自动加载问题的关键步骤
 load_dotenv()
 
 from webui.base import GraphGenParams
@@ -38,38 +39,50 @@ css = """
 
 
 def init_graph_gen(config: dict, env: dict) -> GraphGen:
-    # Set up working directory - use main cache directory instead of temp subdirectory
+    """
+    初始化GraphGen实例
+    解决环境变量加载和初始化参数配置问题
+    
+    Args:
+        config: 配置字典，包含分词器等参数
+        env: 环境变量字典，包含API Key等敏感信息
+    
+    Returns:
+        初始化完成的GraphGen实例
+    """
+    # 设置工作目录 - 使用主缓存目录而不是临时子目录
     cache_dir = os.path.join(root_dir, "cache")
     os.makedirs(cache_dir, exist_ok=True)
     
+    # 设置日志目录
     log_dir = os.path.join(cache_dir, "logs")
     os.makedirs(log_dir, exist_ok=True)
     request_id = str(uuid.uuid4())
     log_file = os.path.join(log_dir, f"{request_id}.log")
     
-    # Use main cache directory as working directory to persist graph
+    # 使用主缓存目录作为工作目录以持久化存储图数据
     working_dir = cache_dir
 
     set_logger(log_file, if_stream=False)
     
-    # Temporarily set environment variables for GraphGen initialization
-    # This ensures GraphGen.__post_init__ doesn't fail
+    # 临时设置环境变量以便GraphGen初始化
+    # 这确保了GraphGen.__post_init__不会因为缺少API Key而失败
     for key, value in env.items():
-        if value:  # Only set non-empty values
+        if value:  # 只设置非空值
             os.environ[key] = str(value)
     
-    # Create a minimal config for GraphGen initialization
+    # 为GraphGen初始化创建最小配置
     graph_config = {
         "tokenizer": config.get("tokenizer", "cl100k_base"),
-        "search": {"enabled": False},  # Disable search for webui
+        "search": {"enabled": False},  # 为webui禁用搜索功能
         "input_file": config.get("input_file", ""),
-        "input_data_type": "raw"  # Default data type
+        "input_data_type": "raw"  # 默认数据类型
     }
     
     graph_gen = GraphGen(config=graph_config, working_dir=working_dir)
 
-    # Set up LLM clients with the provided parameters
-    # This will override the ones created in GraphGen.__post_init__
+    # 使用提供的参数设置LLM客户端
+    # 这将覆盖在GraphGen.__post_init__中创建的客户端
     graph_gen.synthesizer_llm_client = OpenAIModel(
         model_name=env.get("SYNTHESIZER_MODEL", ""),
         base_url=env.get("SYNTHESIZER_BASE_URL", ""),
@@ -90,6 +103,7 @@ def init_graph_gen(config: dict, env: dict) -> GraphGen:
 
     graph_gen.tokenizer_instance = Tokenizer(config.get("tokenizer", "cl100k_base"))
 
+    # 配置遍历策略
     strategy_config = config.get("traverse_strategy", {})
     graph_gen.traverse_strategy = TraverseStrategy(
         qa_form=strategy_config.get("qa_form"),
@@ -108,40 +122,53 @@ def init_graph_gen(config: dict, env: dict) -> GraphGen:
 
 # pylint: disable=too-many-statements
 def run_graphgen(params, progress=gr.Progress()):
+    """
+    运行GraphGen数据生成流程
+    
+    Args:
+        params: Web界面参数对象
+        progress: Gradio进度条对象
+    
+    Returns:
+        生成的数据文件和Token统计信息
+    """
     def sum_tokens(client):
+        """计算客户端使用的总Token数"""
         return sum(u["total_tokens"] for u in client.token_usage)
 
+    # 构建配置字典
     config = {
-        "if_trainee_model": params.if_trainee_model,
-        "input_file": params.input_file,
-        "tokenizer": params.tokenizer,
-        "quiz_samples": params.quiz_samples,
+        "if_trainee_model": params.if_trainee_model,  # 是否使用学生模型
+        "input_file": params.input_file,  # 输入文件路径
+        "tokenizer": params.tokenizer,  # 分词器类型
+        "quiz_samples": params.quiz_samples,  # 测验样本数
         "traverse_strategy": {
-            "qa_form": params.qa_form,
-            "bidirectional": params.bidirectional,
-            "expand_method": params.expand_method,
-            "max_extra_edges": params.max_extra_edges,
-            "max_tokens": params.max_tokens,
-            "max_depth": params.max_depth,
-            "edge_sampling": params.edge_sampling,
-            "isolated_node_strategy": params.isolated_node_strategy,
-            "loss_strategy": params.loss_strategy,
+            "qa_form": params.qa_form,  # 问答对形式
+            "bidirectional": params.bidirectional,  # 是否双向遍历
+            "expand_method": params.expand_method,  # 扩展方法
+            "max_extra_edges": params.max_extra_edges,  # 最大额外边数
+            "max_tokens": params.max_tokens,  # 最大Token数
+            "max_depth": params.max_depth,  # 最大深度
+            "edge_sampling": params.edge_sampling,  # 边采样策略
+            "isolated_node_strategy": params.isolated_node_strategy,  # 孤立节点策略
+            "loss_strategy": params.loss_strategy,  # 损失策略
         },
-        "chunk_size": params.chunk_size,
+        "chunk_size": params.chunk_size,  # 分块大小
     }
 
+    # 构建环境变量字典
     env = {
-        "SYNTHESIZER_BASE_URL": params.synthesizer_url,
-        "SYNTHESIZER_MODEL": params.synthesizer_model,
-        "TRAINEE_BASE_URL": params.trainee_url,
-        "TRAINEE_MODEL": params.trainee_model,
-        "SYNTHESIZER_API_KEY": params.api_key,
-        "TRAINEE_API_KEY": params.trainee_api_key,
-        "RPM": params.rpm,
-        "TPM": params.tpm,
+        "SYNTHESIZER_BASE_URL": params.synthesizer_url,  # 生成器模型URL
+        "SYNTHESIZER_MODEL": params.synthesizer_model,  # 生成器模型名称
+        "TRAINEE_BASE_URL": params.trainee_url,  # 学生模型URL
+        "TRAINEE_MODEL": params.trainee_model,  # 学生模型名称
+        "SYNTHESIZER_API_KEY": params.api_key,  # 生成器API密钥
+        "TRAINEE_API_KEY": params.trainee_api_key,  # 学生模型API密钥
+        "RPM": params.rpm,  # 每分钟请求数限制
+        "TPM": params.tpm,  # 每分钟Token数限制
     }
 
-    # Test API connection
+    # 测试API连接
     test_api_connection(
         env["SYNTHESIZER_BASE_URL"],
         env["SYNTHESIZER_API_KEY"],
@@ -152,60 +179,65 @@ def run_graphgen(params, progress=gr.Progress()):
             env["TRAINEE_BASE_URL"], env["TRAINEE_API_KEY"], env["TRAINEE_MODEL"]
         )
 
-    # Initialize GraphGen
+    # 初始化GraphGen
     graph_gen = init_graph_gen(config, env)
-    # Removed graph_gen.clear() to enable incremental knowledge accumulation
+    # 删除了graph_gen.clear()以启用增量知识积累
 
     graph_gen.progress_bar = progress
 
     try:
-        # Load input data
+        # 加载输入数据
         file = config["input_file"]
         if isinstance(file, list):
             file = file[0]
 
         data = []
 
+        # 根据文件扩展名确定数据类型和加载方式
         if file.endswith(".jsonl"):
+            # JSONL格式：每行一个JSON对象
             data_type = "raw"
             with open(file, "r", encoding="utf-8") as f:
                 data.extend(json.loads(line) for line in f)
         elif file.endswith(".json"):
+            # JSON格式：已分块的数据
             data_type = "chunked"
             with open(file, "r", encoding="utf-8") as f:
                 data.extend(json.load(f))
         elif file.endswith(".txt"):
-            # 读取文件后根据chunk_size转成raw格式的数据
+            # TXT格式：纯文本，需要转换为raw格式
             data_type = "raw"
             content = ""
             with open(file, "r", encoding="utf-8") as f:
                 lines = f.readlines()
                 for line in lines:
                     content += line.strip() + " "
+            # 按指定大小分块
             size = int(config.get("chunk_size", 512))
             chunks = [content[i : i + size] for i in range(0, len(content), size)]
             data.extend([{"content": chunk} for chunk in chunks])
         else:
             raise ValueError(f"Unsupported file type: {file}")
 
-        # Process the data
+        # 处理数据：构建知识图谱
         graph_gen.insert_data(data, data_type)
 
         if config["if_trainee_model"]:
-            # Generate quiz
+            # 生成测验：测试学生模型对知识的掌握程度
             graph_gen.quiz_with_samples(max_samples=config["quiz_samples"])
 
-            # Judge statements
+            # 判断语句：评估生成的语句质量
             graph_gen.judge_statements()
         else:
+            # 如果不使用学生模型，则使用随机采样策略
             graph_gen.traverse_strategy.edge_sampling = "random"
-            # Skip judge statements
+            # 跳过语句判断
             graph_gen.judge_statements(skip=True)
 
-        # Traverse graph
+        # 遍历图谱：生成问答对
         graph_gen.traverse_with_strategy(traverse_strategy=graph_gen.traverse_strategy, output_data_type=config["traverse_strategy"]["qa_form"])
 
-        # Save output
+        # 保存输出结果
         output_data = graph_gen.qa_storage.data
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
@@ -213,6 +245,7 @@ def run_graphgen(params, progress=gr.Progress()):
             json.dump(output_data, tmpfile, ensure_ascii=False)
             output_file = tmpfile.name
 
+        # 统计Token使用情况
         synthesizer_tokens = sum_tokens(graph_gen.synthesizer_llm_client)
         trainee_tokens = (
             sum_tokens(graph_gen.trainee_llm_client)
@@ -221,6 +254,7 @@ def run_graphgen(params, progress=gr.Progress()):
         )
         total_tokens = synthesizer_tokens + trainee_tokens
 
+        # 更新Token统计表格
         data_frame = params.token_counter
         try:
             _update_data = [
