@@ -1,35 +1,16 @@
 import json
-import json
 import os
 import sys
 import tempfile
-import uuid
 
 import gradio as gr
 import pandas as pd
-from dotenv import load_dotenv
-
-try:
-    from webui.i18n import Translate
-    from webui.i18n import gettext as _
-except ImportError:
-    # 如果新的i18n模块不可用，使用fallback
-    def _(text):
-        return text
-    
-    from contextlib import contextmanager
-    
-    @contextmanager
-    def Translate(*args, **kwargs):
-        yield None
-
-# 从.env文件中加载环境变量
-# 这是解决Windows下环境变量不自动加载问题的关键步骤
-load_dotenv()
 
 from webui.base import GraphGenParams
 from webui.cache_utils import cleanup_workspace, setup_workspace
 from webui.count_tokens import count_tokens
+from webui.i18n import Translate
+from webui.i18n import gettext as _
 from webui.test_api import test_api_connection
 
 # pylint: disable=wrong-import-position
@@ -51,50 +32,13 @@ css = """
 
 
 def init_graph_gen(config: dict, env: dict) -> GraphGen:
-    """
-    初始化GraphGen实例
-    解决环境变量加载和初始化参数配置问题
-    
-    Args:
-        config: 配置字典，包含分词器等参数
-        env: 环境变量字典，包含API Key等敏感信息
-    
-    Returns:
-        初始化完成的GraphGen实例
-    """
-    # 设置工作目录 - 使用主缓存目录而不是临时子目录
-    cache_dir = os.path.join(root_dir, "cache")
-    os.makedirs(cache_dir, exist_ok=True)
-    
-    # 设置日志目录
-    log_dir = os.path.join(cache_dir, "logs")
-    os.makedirs(log_dir, exist_ok=True)
-    request_id = str(uuid.uuid4())
-    log_file = os.path.join(log_dir, f"{request_id}.log")
-    
-    # 使用主缓存目录作为工作目录以持久化存储图数据
-    working_dir = cache_dir
+    # Set up working directory
+    log_file, working_dir = setup_workspace(os.path.join(root_dir, "cache"))
 
     set_logger(log_file, if_stream=False)
-    
-    # 临时设置环境变量以便GraphGen初始化
-    # 这确保了GraphGen.__post_init__不会因为缺少API Key而失败
-    for key, value in env.items():
-        if value:  # 只设置非空值
-            os.environ[key] = str(value)
-    
-    # 为GraphGen初始化创建最小配置
-    graph_config = {
-        "tokenizer": config.get("tokenizer", "cl100k_base"),
-        "search": {"enabled": False},  # 为webui禁用搜索功能
-        "input_file": config.get("input_file", ""),
-        "input_data_type": "raw"  # 默认数据类型
-    }
-    
-    graph_gen = GraphGen(config=graph_config, working_dir=working_dir)
+    graph_gen = GraphGen(working_dir=working_dir)
 
-    # 使用提供的参数设置LLM客户端
-    # 这将覆盖在GraphGen.__post_init__中创建的客户端
+    # Set up LLM clients
     graph_gen.synthesizer_llm_client = OpenAIModel(
         model_name=env.get("SYNTHESIZER_MODEL", ""),
         base_url=env.get("SYNTHESIZER_BASE_URL", ""),
@@ -115,7 +59,6 @@ def init_graph_gen(config: dict, env: dict) -> GraphGen:
 
     graph_gen.tokenizer_instance = Tokenizer(config.get("tokenizer", "cl100k_base"))
 
-    # 配置遍历策略
     strategy_config = config.get("traverse_strategy", {})
     graph_gen.traverse_strategy = TraverseStrategy(
         qa_form=strategy_config.get("qa_form"),
@@ -134,53 +77,40 @@ def init_graph_gen(config: dict, env: dict) -> GraphGen:
 
 # pylint: disable=too-many-statements
 def run_graphgen(params, progress=gr.Progress()):
-    """
-    运行GraphGen数据生成流程
-    
-    Args:
-        params: Web界面参数对象
-        progress: Gradio进度条对象
-    
-    Returns:
-        生成的数据文件和Token统计信息
-    """
     def sum_tokens(client):
-        """计算客户端使用的总Token数"""
         return sum(u["total_tokens"] for u in client.token_usage)
 
-    # 构建配置字典
     config = {
-        "if_trainee_model": params.if_trainee_model,  # 是否使用学生模型
-        "input_file": params.input_file,  # 输入文件路径
-        "tokenizer": params.tokenizer,  # 分词器类型
-        "quiz_samples": params.quiz_samples,  # 测验样本数
+        "if_trainee_model": params.if_trainee_model,
+        "input_file": params.input_file,
+        "tokenizer": params.tokenizer,
+        "quiz_samples": params.quiz_samples,
         "traverse_strategy": {
-            "qa_form": params.qa_form,  # 问答对形式
-            "bidirectional": params.bidirectional,  # 是否双向遍历
-            "expand_method": params.expand_method,  # 扩展方法
-            "max_extra_edges": params.max_extra_edges,  # 最大额外边数
-            "max_tokens": params.max_tokens,  # 最大Token数
-            "max_depth": params.max_depth,  # 最大深度
-            "edge_sampling": params.edge_sampling,  # 边采样策略
-            "isolated_node_strategy": params.isolated_node_strategy,  # 孤立节点策略
-            "loss_strategy": params.loss_strategy,  # 损失策略
+            "qa_form": params.qa_form,
+            "bidirectional": params.bidirectional,
+            "expand_method": params.expand_method,
+            "max_extra_edges": params.max_extra_edges,
+            "max_tokens": params.max_tokens,
+            "max_depth": params.max_depth,
+            "edge_sampling": params.edge_sampling,
+            "isolated_node_strategy": params.isolated_node_strategy,
+            "loss_strategy": params.loss_strategy,
         },
-        "chunk_size": params.chunk_size,  # 分块大小
+        "chunk_size": params.chunk_size,
     }
 
-    # 构建环境变量字典
     env = {
-        "SYNTHESIZER_BASE_URL": params.synthesizer_url,  # 生成器模型URL
-        "SYNTHESIZER_MODEL": params.synthesizer_model,  # 生成器模型名称
-        "TRAINEE_BASE_URL": params.trainee_url,  # 学生模型URL
-        "TRAINEE_MODEL": params.trainee_model,  # 学生模型名称
-        "SYNTHESIZER_API_KEY": params.api_key,  # 生成器API密钥
-        "TRAINEE_API_KEY": params.trainee_api_key,  # 学生模型API密钥
-        "RPM": params.rpm,  # 每分钟请求数限制
-        "TPM": params.tpm,  # 每分钟Token数限制
+        "SYNTHESIZER_BASE_URL": params.synthesizer_url,
+        "SYNTHESIZER_MODEL": params.synthesizer_model,
+        "TRAINEE_BASE_URL": params.trainee_url,
+        "TRAINEE_MODEL": params.trainee_model,
+        "SYNTHESIZER_API_KEY": params.api_key,
+        "TRAINEE_API_KEY": params.trainee_api_key,
+        "RPM": params.rpm,
+        "TPM": params.tpm,
     }
 
-    # 测试API连接
+    # Test API connection
     test_api_connection(
         env["SYNTHESIZER_BASE_URL"],
         env["SYNTHESIZER_API_KEY"],
@@ -191,65 +121,60 @@ def run_graphgen(params, progress=gr.Progress()):
             env["TRAINEE_BASE_URL"], env["TRAINEE_API_KEY"], env["TRAINEE_MODEL"]
         )
 
-    # 初始化GraphGen
+    # Initialize GraphGen
     graph_gen = init_graph_gen(config, env)
-    # 删除了graph_gen.clear()以启用增量知识积累
+    graph_gen.clear()
 
     graph_gen.progress_bar = progress
 
     try:
-        # 加载输入数据
+        # Load input data
         file = config["input_file"]
         if isinstance(file, list):
             file = file[0]
 
         data = []
 
-        # 根据文件扩展名确定数据类型和加载方式
         if file.endswith(".jsonl"):
-            # JSONL格式：每行一个JSON对象
             data_type = "raw"
             with open(file, "r", encoding="utf-8") as f:
                 data.extend(json.loads(line) for line in f)
         elif file.endswith(".json"):
-            # JSON格式：已分块的数据
             data_type = "chunked"
             with open(file, "r", encoding="utf-8") as f:
                 data.extend(json.load(f))
         elif file.endswith(".txt"):
-            # TXT格式：纯文本，需要转换为raw格式
+            # 读取文件后根据chunk_size转成raw格式的数据
             data_type = "raw"
             content = ""
             with open(file, "r", encoding="utf-8") as f:
                 lines = f.readlines()
                 for line in lines:
                     content += line.strip() + " "
-            # 按指定大小分块
             size = int(config.get("chunk_size", 512))
             chunks = [content[i : i + size] for i in range(0, len(content), size)]
             data.extend([{"content": chunk} for chunk in chunks])
         else:
             raise ValueError(f"Unsupported file type: {file}")
 
-        # 处理数据：构建知识图谱
-        graph_gen.insert_data(data, data_type)
+        # Process the data
+        graph_gen.insert(data, data_type)
 
         if config["if_trainee_model"]:
-            # 生成测验：测试学生模型对知识的掌握程度
-            graph_gen.quiz_with_samples(max_samples=config["quiz_samples"])
+            # Generate quiz
+            graph_gen.quiz(max_samples=config["quiz_samples"])
 
-            # 判断语句：评估生成的语句质量
-            graph_gen.judge_statements()
+            # Judge statements
+            graph_gen.judge()
         else:
-            # 如果不使用学生模型，则使用随机采样策略
             graph_gen.traverse_strategy.edge_sampling = "random"
-            # 跳过语句判断
-            graph_gen.judge_statements(skip=True)
+            # Skip judge statements
+            graph_gen.judge(skip=True)
 
-        # 遍历图谱：生成问答对
-        graph_gen.traverse_with_strategy(traverse_strategy=graph_gen.traverse_strategy, output_data_type=config["traverse_strategy"]["qa_form"])
+        # Traverse graph
+        graph_gen.traverse(traverse_strategy=graph_gen.traverse_strategy)
 
-        # 保存输出结果
+        # Save output
         output_data = graph_gen.qa_storage.data
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
@@ -257,7 +182,6 @@ def run_graphgen(params, progress=gr.Progress()):
             json.dump(output_data, tmpfile, ensure_ascii=False)
             output_file = tmpfile.name
 
-        # 统计Token使用情况
         synthesizer_tokens = sum_tokens(graph_gen.synthesizer_llm_client)
         trainee_tokens = (
             sum_tokens(graph_gen.trainee_llm_client)
@@ -266,7 +190,6 @@ def run_graphgen(params, progress=gr.Progress()):
         )
         total_tokens = synthesizer_tokens + trainee_tokens
 
-        # 更新Token统计表格
         data_frame = params.token_counter
         try:
             _update_data = [
@@ -292,8 +215,8 @@ def run_graphgen(params, progress=gr.Progress()):
         raise gr.Error(f"Error occurred: {str(e)}")
 
     finally:
-        # Note: No need to cleanup workspace since we're using main cache directory
-        pass
+        # Clean up workspace
+        cleanup_workspace(graph_gen.working_dir)
 
 
 with gr.Blocks(title="GraphGen Demo", theme=gr.themes.Glass(), css=css) as demo:
@@ -346,49 +269,53 @@ with gr.Blocks(title="GraphGen Demo", theme=gr.themes.Glass(), css=css) as demo:
         lang_btn.render()
 
         gr.Markdown(
-            value="# GraphGen\n\n### [GraphGen](https://github.com/open-sciencelab/GraphGen) Knowledge Graph-Guided Synthetic Data Generation Framework"
+            value="# "
+            + _("Title")
+            + "\n\n"
+            + "### [GraphGen](https://github.com/open-sciencelab/GraphGen) "
+            + _("Intro")
         )
 
         if_trainee_model = gr.Checkbox(
-            label="Use Trainee Model", value=False, interactive=True
+            label=_("Use Trainee Model"), value=False, interactive=True
         )
 
-        with gr.Accordion(label="Model Config", open=False):
+        with gr.Accordion(label=_("Model Config"), open=False):
             synthesizer_url = gr.Textbox(
                 label="Synthesizer URL",
                 value="https://api.siliconflow.cn/v1",
-                info="Base URL for the synthesizer model API",
+                info=_("Synthesizer URL Info"),
                 interactive=True,
             )
             synthesizer_model = gr.Textbox(
                 label="Synthesizer Model",
                 value="Qwen/Qwen2.5-7B-Instruct",
-                info="Model name for synthetic data generation",
+                info=_("Synthesizer Model Info"),
                 interactive=True,
             )
             trainee_url = gr.Textbox(
                 label="Trainee URL",
                 value="https://api.siliconflow.cn/v1",
-                info="Base URL for the trainee model API",
+                info=_("Trainee URL Info"),
                 interactive=True,
                 visible=if_trainee_model.value is True,
             )
             trainee_model = gr.Textbox(
                 label="Trainee Model",
                 value="Qwen/Qwen2.5-7B-Instruct",
-                info="Model name for evaluation and assessment",
+                info=_("Trainee Model Info"),
                 interactive=True,
                 visible=if_trainee_model.value is True,
             )
             trainee_api_key = gr.Textbox(
-                label="SiliconFlow Token for Trainee Model",
+                label=_("SiliconFlow Token for Trainee Model"),
                 type="password",
                 value="",
                 info="https://cloud.siliconflow.cn/account/ak",
                 visible=if_trainee_model.value is True,
             )
 
-        with gr.Accordion(label="Generation Config", open=False):
+        with gr.Accordion(label=_("Generation Config"), open=False):
             chunk_size = gr.Slider(
                 label="Chunk Size",
                 minimum=256,
@@ -473,13 +400,13 @@ with gr.Blocks(title="GraphGen Demo", theme=gr.themes.Glass(), css=css) as demo:
         with gr.Row(equal_height=True):
             with gr.Column(scale=3):
                 api_key = gr.Textbox(
-                    label="SiliconFlow Token",
+                    label=_("SiliconFlow Token"),
                     type="password",
                     value="",
                     info="https://cloud.siliconflow.cn/account/ak",
                 )
             with gr.Column(scale=1):
-                test_connection_btn = gr.Button("Test Connection")
+                test_connection_btn = gr.Button(_("Test Connection"))
 
         with gr.Blocks():
             with gr.Row(equal_height=True):
@@ -508,7 +435,7 @@ with gr.Blocks(title="GraphGen Demo", theme=gr.themes.Glass(), css=css) as demo:
             with gr.Row(equal_height=True):
                 with gr.Column(scale=1):
                     upload_file = gr.File(
-                        label="Upload File",
+                        label=_("Upload File"),
                         file_count="single",
                         file_types=[".txt", ".json", ".jsonl"],
                         interactive=True,
@@ -521,7 +448,7 @@ with gr.Blocks(title="GraphGen Demo", theme=gr.themes.Glass(), css=css) as demo:
                             [os.path.join(examples_dir, "chunked_demo.json")],
                         ],
                         inputs=upload_file,
-                        label="Example Files",
+                        label=_("Example Files"),
                         examples_per_page=3,
                     )
                 with gr.Column(scale=1):
@@ -545,7 +472,7 @@ with gr.Blocks(title="GraphGen Demo", theme=gr.themes.Glass(), css=css) as demo:
                 wrap=True,
             )
 
-        submit_btn = gr.Button("Run GraphGen")
+        submit_btn = gr.Button(_("Run GraphGen"))
 
         # Test Connection
         test_connection_btn.click(
@@ -654,6 +581,7 @@ with gr.Blocks(title="GraphGen Demo", theme=gr.themes.Glass(), css=css) as demo:
             ],
             outputs=[output, token_counter],
         )
+
 
 if __name__ == "__main__":
     demo.queue(api_open=False, default_concurrency_limit=2)

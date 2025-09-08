@@ -1,0 +1,20 @@
+input_data_type: raw
+input_file: test_ai.txt  # 可以使用任意小文件，因为会基于现有GraphML
+output_data_type: multi_hop
+output_data_format: ChatML
+tokenizer: cl100k_base
+search:
+  enabled: false
+quiz_and_judge_strategy:
+  enabled: false  # 禁用以加快速度，直接生成
+  quiz_samples: 2
+  re_judge: false
+traverse_strategy:
+  bidirectional: true
+  edge_sampling: random  # 因为没有trainee model，使用random
+  expand_method: max_tokens
+  isolated_node_strategy: ignore
+  max_depth: 3  # 增加深度以获得更复杂的多跳
+  max_extra_edges: 5
+  max_tokens: 512  # 增加token限制以获得更丰富的内容
+  loss_strategy: only_edge
