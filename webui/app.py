@@ -65,7 +65,12 @@ def init_graph_gen(config: dict, env: dict) -> GraphGen:
         "tokenizer": config.get("tokenizer", "cl100k_base"),
         "search": {"enabled": False},  # 为webui禁用搜索功能
         "input_file": config.get("input_file", ""),
-        "input_data_type": "raw"  # 默认数据类型
+        "input_data_type": "raw",  # 默认数据类型
+        "quiz_and_judge_strategy": {
+            "enabled": config.get("if_trainee_model", False),
+            "quiz_samples": config.get("quiz_samples", 2),
+            "re_judge": False
+        }
     }
     
     graph_gen = GraphGen(config=graph_config, working_dir=working_dir)
@@ -244,11 +249,12 @@ def run_graphgen(params, progress=gr.Progress()):
         )
 
     except Exception as e:  # pylint: disable=broad-except
+        # Only cleanup on error
+        cleanup_workspace(graph_gen.working_dir)
         raise gr.Error(f"Error occurred: {str(e)}")
 
-    finally:
-        # Clean up workspace
-        cleanup_workspace(graph_gen.working_dir)
+    # Note: 不自动清理工作目录，保留生成的数据供用户查看
+    # 如需清理，可手动删除 cache 目录下的子文件夹
 
 
 with gr.Blocks(title="GraphGen Demo", theme=gr.themes.Glass(), css=css) as demo:
