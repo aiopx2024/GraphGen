@@ -1,21 +1,38 @@
-input_data_type: raw # raw, chunked
-input_file: resources/input_examples/raw_demo.jsonl # input file path, support json, jsonl, txt. See resources/input_examples for examples
-output_data_type: multi_hop # atomic, aggregated, multi_hop, cot
-output_data_format: ChatML # Alpaca, Sharegpt, ChatML
-tokenizer: cl100k_base # tokenizer for counting tokens, support tiktoken tokenizer names and local tokenizer path
-search: # web search configuration
-  enabled: false # whether to enable web search
-  search_types: ["google"] # search engine types, support: google, bing, uniprot, wikipedia
-quiz_and_judge_strategy: # quiz and test whether the LLM masters the knowledge points
-  enabled: true
-  quiz_samples: 2 # number of quiz samples to generate
-  re_judge: false # whether to re-judge the existing quiz samples
-traverse_strategy: # strategy for clustering sub-graphs using comprehension loss
-  bidirectional: true # whether to traverse the graph in both directions
-  edge_sampling: max_loss # edge sampling strategy, support: random, max_loss, min_loss
-  expand_method: max_width # expand method, support: max_width, max_depth
-  isolated_node_strategy: ignore # strategy for isolated nodes, support: ignore, add
-  max_depth: 1 # maximum depth for graph traversal
-  max_extra_edges: 2 # max edges per direction (if expand_method="max_width")
-  max_tokens: 256 # restricts input length (if expand_method="max_tokens")
-  loss_strategy: only_edge # defines loss computation focus, support: only_edge, both
+# GraphGen 多跳推理问答对生成配置文件
+# 此配置用于生成需要跨多个实体进行推理的复杂问答对
+# 适用于训练模型的多步推理和逻辑推理能力
+
+# === 输入配置 ===
+input_data_type: raw  # 输入数据类型: raw(原始文档) 或 chunked(预分块数据)
+input_file: resources/input_examples/raw_demo.jsonl  # 输入文件路径，支持json、jsonl、txt格式，参考resources/input_examples中的示例
+
+# === 输出配置 ===
+output_data_type: multi_hop  # 输出数据类型: atomic(原子性), aggregated(聚合型), multi_hop(多跳推理), cot(思维链)
+output_data_format: ChatML   # 输出格式: Alpaca(指令微调格式), ShareGPT(对话格式), ChatML(聊天标记语言)
+
+# === 分词器配置 ===
+tokenizer: cl100k_base  # 用于Token计数的分词器，支持tiktoken分词器名称和本地分词器路径
+
+# === 外部搜索配置 ===
+search:
+  enabled: false  # 是否启用外部搜索来补充知识图谱信息
+  search_types: ["google"]  # 搜索引擎类型，支持: google, bing, uniprot, wikipedia
+
+# === 知识缺口识别策略 ===
+# 通过Quiz测试和判断来识别LLM对知识点的掌握程度
+quiz_and_judge_strategy:
+  enabled: true        # 是否启用Quiz和判断策略
+  quiz_samples: 2      # 生成的Quiz样本数量
+  re_judge: false      # 是否重新判断已有的Quiz样本
+
+# === 图遍历策略 ===
+# 使用理解损失对子图进行聚类的策略配置
+traverse_strategy:
+  bidirectional: true           # 是否双向遍历图（正向和反向）
+  edge_sampling: max_loss       # 边采样策略: random(随机), max_loss(最大损失优先), min_loss(最小损失优先)
+  expand_method: max_width      # 扩展方法: max_width(宽度优先), max_depth(深度优先)
+  isolated_node_strategy: ignore  # 孤立节点处理策略: ignore(忽略), add(添加)
+  max_depth: 1                  # 图遍历的最大深度
+  max_extra_edges: 2           # 每个方向的最大边数（当expand_method="max_width"时）
+  max_tokens: 256              # 限制输入长度（当expand_method="max_tokens"时）
+  loss_strategy: only_edge     # 损失计算重点: only_edge(仅边), both(边和节点)

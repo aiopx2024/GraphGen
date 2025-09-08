@@ -1,13 +1,27 @@
-input_data_type: raw # raw, chunked
-input_file: resources/input_examples/raw_demo.jsonl  # input file path, support json, jsonl, txt. See resources/input_examples for examples
-output_data_type: cot # atomic, aggregated, multi_hop, cot
-output_data_format: Sharegpt # Alpaca, Sharegpt, ChatML
-tokenizer: cl100k_base # tokenizer for counting tokens, support tiktoken tokenizer names and local tokenizer path
-search: # web search configuration
-  enabled: false # whether to enable web search
-  search_types: ["google"] # search engine types, support: google, bing, uniprot, wikipedia
+# GraphGen 思维链(CoT)推理数据生成配置文件
+# 此配置用于生成具有复杂推理过程的思维链数据
+# 使用Leiden算法进行社区检测，生成基于社区的推理链条
+
+# === 输入配置 ===
+input_data_type: raw  # 输入数据类型: raw(原始文档) 或 chunked(预分块数据)
+input_file: resources/input_examples/raw_demo.jsonl  # 输入文件路径，支持json、jsonl、txt格式，参考resources/input_examples中的示例
+
+# === 输出配置 ===
+output_data_type: cot        # 输出数据类型: atomic(原子性), aggregated(聚合型), multi_hop(多跳推理), cot(思维链)
+output_data_format: Sharegpt  # 输出格式: Alpaca(指令微调格式), ShareGPT(对话格式), ChatML(聊天标记语言)
+
+# === 分词器配置 ===
+tokenizer: cl100k_base  # 用于Token计数的分词器，支持tiktoken分词器名称和本地分词器路径
+
+# === 外部搜索配置 ===
+search:
+  enabled: false  # 是否启用外部搜索来补充知识图谱信息
+  search_types: ["google"]  # 搜索引擎类型，支持: google, bing, uniprot, wikipedia
+
+# === CoT生成方法参数 ===
+# 使用社区检测算法对知识图谱进行分组，生成复杂推理链条
 method_params:
-  method: leiden
-  max_size: 20 # Maximum size of communities
-  use_lcc: false
-  random_seed: 42
+  method: leiden          # 社区检测算法: leiden(推荐)、louvain等
+  max_size: 20           # 社区的最大大小（节点数），控制推理链的复杂度
+  use_lcc: false         # 是否仅使用最大连通分量(Largest Connected Component)
+  random_seed: 42        # 随机种子，确保结果可重现
