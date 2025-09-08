@@ -5,7 +5,34 @@ from tqdm.asyncio import tqdm as tqdm_async
 
 from graphgen.models import CommunityDetector, NetworkXStorage, OpenAIModel
 from graphgen.templates import COT_GENERATION_PROMPT, COT_TEMPLATE_DESIGN_PROMPT
-from graphgen.utils import compute_content_hash, detect_main_language
+from graphgen.utils import compute_content_hash, detect_main_language, logger
+
+# LLM调用位置跟踪：记录每个调用位置是否已经输出过详细日志
+llm_call_tracker = set()
+
+
+def log_llm_call_once(call_location: str, prompt: str, context: str = None, is_before: bool = True):
+    """
+    为LLM调用记录日志，每个位置只在第一次调用时输出详细信息
+    
+    Args:
+        call_location (str): 调用位置标识，如 'cot_generation'
+        prompt (str): 发送给LLM的提示词
+        context (str, optional): LLM返回的结果
+        is_before (bool): True表示调用前，False表示调用后
+    """
+    call_key = f"{call_location}_{'before' if is_before else 'after'}"
+    
+    if call_key not in llm_call_tracker:
+        llm_call_tracker.add(call_key)
+        
+        if is_before:
+            logger.info("=== LLM调用前 [%s] ===", call_location)
+            logger.info("Prompt: %s", prompt)
+        else:
+            logger.info("=== LLM调用后 [%s] ===", call_location)
+            if context:
+                logger.info("Context: %s", context)
 
 
 async def generate_cot(
@@ -68,7 +95,13 @@ async def generate_cot(
                 relationships=relationships_str,
             )
 
+            # 调用前记录日志（仅第一次）
+            log_llm_call_once("cot_template_design", prompt, is_before=True)
+            
             cot_template = await synthesizer_llm_client.generate_answer(prompt)
+            
+            # 调用后记录日志（仅第一次）
+            log_llm_call_once("cot_template_design", prompt, cot_template, is_before=False)
 
             if "问题：" in cot_template and "推理路径设计：" in cot_template:
                 question = cot_template.split("问题：")[1].split("推理路径设计：")[0].strip()
@@ -92,7 +125,13 @@ async def generate_cot(
                 reasoning_template=reasoning_path,
             )
 
+            # 调用前记录日志（仅第一次）
+            log_llm_call_once("cot_answer_generation", prompt, is_before=True)
+            
             cot_answer = await synthesizer_llm_client.generate_answer(prompt)
+            
+            # 调用后记录日志（仅第一次）
+            log_llm_call_once("cot_answer_generation", prompt, cot_answer, is_before=False)
 
             return c_id, (question, reasoning_path, cot_answer)
 

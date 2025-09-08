@@ -19,6 +19,33 @@ from graphgen.utils import (
     split_string_by_multi_markers,
 )
 
+# LLM调用位置跟踪：记录每个调用位置是否已经输出过详细日志
+llm_call_tracker = set()
+
+
+def log_llm_call_once(call_location: str, prompt: str, context: str = None, is_before: bool = True):
+    """
+    为LLM调用记录日志，每个位置只在第一次调用时输出详细信息
+    
+    Args:
+        call_location (str): 调用位置标识，如 'kg_extraction'
+        prompt (str): 发送给LLM的提示词
+        context (str, optional): LLM返回的结果
+        is_before (bool): True表示调用前，False表示调用后
+    """
+    call_key = f"{call_location}_{'before' if is_before else 'after'}"
+    
+    if call_key not in llm_call_tracker:
+        llm_call_tracker.add(call_key)
+        
+        if is_before:
+            logger.info("=== LLM调用前 [%s] ===", call_location)
+            logger.info("Prompt: %s", prompt)  # 输出完整prompt
+        else:
+            logger.info("=== LLM调用后 [%s] ===", call_location)
+            if context:
+                logger.info("Context: %s", context)  # 输出完整context
+
 
 # pylint: disable=too-many-statements
 async def extract_kg(
@@ -55,21 +82,46 @@ async def extract_kg(
                 **KG_EXTRACTION_PROMPT["FORMAT"], input_text=content
             )
 
+            # 调用前记录日志（仅第一次）
+            log_llm_call_once("kg_extraction_initial", hint_prompt, is_before=True)
+            
             final_result = await llm_client.generate_answer(hint_prompt)
+            
+            # 调用后记录日志（仅第一次）
+            log_llm_call_once("kg_extraction_initial", hint_prompt, final_result, is_before=False)
+            
             logger.info("First result: %s", final_result)
 
             history = pack_history_conversations(hint_prompt, final_result)
             for loop_index in range(max_loop):
+                # 调用前记录日志（仅第一次）
+                log_llm_call_once("kg_extraction_if_loop", 
+                    KG_EXTRACTION_PROMPT[language]["IF_LOOP"], is_before=True)
+                
                 if_loop_result = await llm_client.generate_answer(
                     text=KG_EXTRACTION_PROMPT[language]["IF_LOOP"], history=history
                 )
+                
+                # 调用后记录日志（仅第一次）
+                log_llm_call_once("kg_extraction_if_loop", 
+                    KG_EXTRACTION_PROMPT[language]["IF_LOOP"], if_loop_result, is_before=False)
+                
                 if_loop_result = if_loop_result.strip().strip('"').strip("'").lower()
                 if if_loop_result != "yes":
                     break
 
+                # 调用前记录日志（仅第一次）
+                log_llm_call_once("kg_extraction_continue", 
+                    KG_EXTRACTION_PROMPT[language]["CONTINUE"], is_before=True)
+                
                 glean_result = await llm_client.generate_answer(
                     text=KG_EXTRACTION_PROMPT[language]["CONTINUE"], history=history
                 )
+                
+                # 调用后记录日志（仅第一次）
+                log_llm_call_once("kg_extraction_continue", 
+                    KG_EXTRACTION_PROMPT[language]["CONTINUE"], glean_result, is_before=False)
+                
                 logger.info("Loop %s glean: %s", loop_index, glean_result)
 
                 history += pack_history_conversations(

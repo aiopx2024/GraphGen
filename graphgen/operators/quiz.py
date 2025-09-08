@@ -6,6 +6,33 @@ from graphgen.models import JsonKVStorage, OpenAIModel, NetworkXStorage
 from graphgen.utils import logger, detect_main_language
 from graphgen.templates import DESCRIPTION_REPHRASING_PROMPT
 
+# LLM调用位置跟踪：记录每个调用位置是否已经输出过详细日志
+llm_call_tracker = set()
+
+
+def log_llm_call_once(call_location: str, prompt: str, context: str = None, is_before: bool = True):
+    """
+    为LLM调用记录日志，每个位置只在第一次调用时输出详细信息
+    
+    Args:
+        call_location (str): 调用位置标识，如 'quiz_generation'
+        prompt (str): 发送给LLM的提示词
+        context (str, optional): LLM返回的结果
+        is_before (bool): True表示调用前，False表示调用后
+    """
+    call_key = f"{call_location}_{'before' if is_before else 'after'}"
+    
+    if call_key not in llm_call_tracker:
+        llm_call_tracker.add(call_key)
+        
+        if is_before:
+            logger.info("=== LLM调用前 [%s] ===", call_location)
+            logger.info("Prompt: %s", prompt)
+        else:
+            logger.info("=== LLM调用后 [%s] ===", call_location)
+            if context:
+                logger.info("Context: %s", context)
+
 
 async def quiz(
         synth_llm_client: OpenAIModel,
@@ -38,10 +65,16 @@ async def quiz(
                 if descriptions:
                     return None
 
+                # 调用前记录日志（仅第一次）
+                log_llm_call_once("quiz_generation", prompt, is_before=True)
+                
                 new_description = await synth_llm_client.generate_answer(
                     prompt,
                     temperature=1
                 )
+                
+                # 调用后记录日志（仅第一次）
+                log_llm_call_once("quiz_generation", prompt, new_description, is_before=False)
                 return  {des: [(new_description, gt)]}
 
             except Exception as e: # pylint: disable=broad-except
