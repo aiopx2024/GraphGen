@@ -66,15 +66,23 @@ class GraphGen:
     progress_bar: gr.Progress = None
 
     def __post_init__(self):
+        """
+        GraphGen类的初始化后处理
+        注意：这里会从环境变量中读取API Key，如果环境变量未设置会抛出断言错误
+        这就是为什么在webui中需要先设置环境变量的原因
+        """
+        # 初始化分词器
         self.tokenizer_instance: Tokenizer = Tokenizer(
             model_name=self.config["tokenizer"]
         )
+        # 初始化生成器LLM客户端（从环境变量读取）
         self.synthesizer_llm_client: OpenAIModel = OpenAIModel(
             model_name=os.getenv("SYNTHESIZER_MODEL"),
             api_key=os.getenv("SYNTHESIZER_API_KEY"),
             base_url=os.getenv("SYNTHESIZER_BASE_URL"),
             tokenizer_instance=self.tokenizer_instance,
         )
+        # 初始化学生模型LLM客户端（从环境变量读取）
         self.trainee_llm_client: OpenAIModel = OpenAIModel(
             model_name=os.getenv("TRAINEE_MODEL"),
             api_key=os.getenv("TRAINEE_API_KEY"),
@@ -88,6 +96,7 @@ class GraphGen:
                 **self.config["traverse_strategy"]
             )
 
+        # 初始化各种存储实例
         self.full_docs_storage: JsonKVStorage = JsonKVStorage(
             self.working_dir, namespace="full_docs"
         )
@@ -111,6 +120,17 @@ class GraphGen:
     async def async_split_chunks(
         self, data: List[Union[List, Dict]], data_type: str
     ) -> dict:
+        """
+        将输入数据分割为文本块
+        支持raw和chunked两种输入格式
+        
+        Args:
+            data: 输入数据，可以是原始文本或已分块的数据
+            data_type: 数据类型，'raw' 或 'chunked'
+        
+        Returns:
+            分块后的数据字典，以chunk_id为键
+        """
         # TODO: configurable whether to use coreference resolution
         if len(data) == 0:
             return {}
@@ -118,7 +138,7 @@ class GraphGen:
         inserting_chunks = {}
         if data_type == "raw":
             assert isinstance(data, list) and isinstance(data[0], dict)
-            # compute hash for each document
+            # 为每个文档计算哈希值
             new_docs = {
                 compute_content_hash(doc["content"], prefix="doc-"): {
                     "content": doc["content"]
@@ -139,6 +159,7 @@ class GraphGen:
             async for doc_key, doc in tqdm_async(
                 new_docs.items(), desc="[1/4]Chunking documents", unit="doc"
             ):
+                # 按Token大小分割文档
                 chunks = {
                     compute_content_hash(dp["content"], prefix="chunk-"): {
                         **dp,
@@ -161,6 +182,7 @@ class GraphGen:
                 k: v for k, v in inserting_chunks.items() if k in _add_chunk_keys
             }
         elif data_type == "chunked":
+            # 处理已分块的数据
             assert isinstance(data, list) and isinstance(data[0], list)
             new_docs = {
                 compute_content_hash("".join(chunk["content"]), prefix="doc-"): {
@@ -196,22 +218,48 @@ class GraphGen:
         else:
             raise ValueError(f"Unknown data type: {data_type}")
 
+        # 保存文档和分块数据
         await self.full_docs_storage.upsert(new_docs)
         await self.text_chunks_storage.upsert(inserting_chunks)
 
         return inserting_chunks
 
     def insert(self):
+        """
+        同步插入数据的包装方法
+        
+        这个方法是 async_insert() 的同步版本，主要用于：
+        1. 命令行工具调用
+        2. 脚本化处理
+        3. 不支持异步的环境
+        
+        内部通过创建事件循环来运行异步的 async_insert() 方法
+        相比 insert_data()，这个方法从配置文件中读取输入文件路径
+        """
         loop = create_event_loop()
         loop.run_until_complete(self.async_insert())
 
     def insert_data(self, data, data_type):
-        """Insert data directly for webui usage"""
+        """
+        直接插入数据，主webui使用
+        
+        Args:
+            data: 要插入的数据
+            data_type: 数据类型，'raw' 或 'chunked'
+        """
         loop = create_event_loop()
         loop.run_until_complete(self.async_insert_data(data, data_type))
 
     async def async_insert_data(self, data, data_type):
-        """Insert chunks into the graph from provided data"""
+        """
+        异步插入数据到知识图谱
+        这是webui调用的主要数据处理流程
+        
+        Args:
+            data: 要插入的数据
+            data_type: 数据类型，'raw' 或 'chunked'
+        """
+        # 首先将数据分块
         inserting_chunks = await self.async_split_chunks(data, data_type)
 
         if len(inserting_chunks) == 0:
@@ -219,6 +267,7 @@ class GraphGen:
             return
         logger.info("[New Chunks] inserting %d chunks", len(inserting_chunks))
 
+        # 进行实体和关系抽取，构建知识图谱
         logger.info("[Entity and Relation Extraction]...")
         _add_entities_and_relations = await extract_kg(
             llm_client=self.synthesizer_llm_client,
@@ -237,9 +286,24 @@ class GraphGen:
 
     async def async_insert(self):
         """
-        insert chunks into the graph
+        异步插入数据到知识图谱（从配置文件读取输入）
+        
+        这是传统的数据插入方法，主要用于：
+        1. 命令行工具传入配置文件
+        2. 批处理任务
+        3. 脚本化执行
+        
+        与 insert_data() 的区别：
+        - 这个方法从 self.config["input_file"] 读取文件路径
+        - insert_data() 直接接收数据参数，主webui使用
+        
+        数据处理流程：
+        1. 从配置中获取输入文件路径和数据类型
+        2. 读取文件内容
+        3. 分块处理
+        4. 抽取实体和关系
+        5. 构建知识图谱
         """
-
         input_file = self.config["input_file"]
         data_type = self.config["input_data_type"]
         data = read_file(input_file)
@@ -268,6 +332,20 @@ class GraphGen:
         await self._insert_done()
 
     async def _insert_done(self):
+        """
+        数据插入完成后的清理工作
+        
+        这个私有方法在数据插入完成后调用，负责：
+        1. 对所有存储实例执行索引完成回调
+        2. 确保数据持久化存储
+        3. 更新缓存和索引
+        
+        涉及的存储实例：
+        - full_docs_storage: 完整文档存储
+        - text_chunks_storage: 文本分块存储
+        - graph_storage: 知识图谱存储
+        - search_storage: 搜索结果存储
+        """
         tasks = []
         for storage_instance in [
             self.full_docs_storage,
@@ -325,7 +403,15 @@ class GraphGen:
         loop.run_until_complete(self.async_quiz())
 
     def quiz_with_samples(self, max_samples):
-        """Quiz with specific max samples for webui usage"""
+        """
+        使用指定样本数进行测验（webui使用）
+        
+        这个方法为webui界面专门设计，允许动态指定Quiz样本数
+        而不是使用配置文件中的固定值
+        
+        Args:
+            max_samples: 最大测验样本数
+        """
         loop = create_event_loop()
         loop.run_until_complete(self.async_quiz_with_samples(max_samples))
 
@@ -353,7 +439,15 @@ class GraphGen:
         loop.run_until_complete(self.async_judge())
 
     def judge_statements(self, skip=False):
-        """Judge statements with skip option for webui usage"""
+        """
+        判断语句质量（webui使用，支持跳过选项）
+        
+        这个方法为webui界面设计，允许在不使用学生模型时跳过语句判断
+        这样可以减少API调用次数和成本
+        
+        Args:
+            skip: 是否跳过语句判断，默认False
+        """
         if skip:
             return
         loop = create_event_loop()
@@ -374,7 +468,22 @@ class GraphGen:
         loop.run_until_complete(self.async_traverse())
 
     def traverse_with_strategy(self, traverse_strategy, output_data_type):
-        """Traverse with specific strategy and output type for webui usage"""
+        """
+        使用指定策略和输出类型遍历图谱（webui使用）
+        
+        这个方法为webui界面设计，允许动态指定：
+        1. 遍历策略（双向、扩展方法、采样策略等）
+        2. 输出数据类型（atomic/multi_hop/aggregated）
+        
+        支持的输出类型：
+        - atomic: 原子性问答对，直接从单个实体生成
+        - multi_hop: 多跳推理问答对，需要跨多个实体
+        - aggregated: 聚合型问答对，基于关系连接
+        
+        Args:
+            traverse_strategy: 遍历策略对象
+            output_data_type: 输出数据类型
+        """
         self.traverse_strategy = traverse_strategy
         loop = create_event_loop()
         loop.run_until_complete(self.async_traverse_with_strategy(output_data_type))

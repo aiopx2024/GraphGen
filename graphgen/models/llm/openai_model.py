@@ -58,6 +58,11 @@ class OpenAIModel(TopkTokenModel):
     tokenizer_instance: Tokenizer = field(default_factory=Tokenizer)
 
     def __post_init__(self):
+        """
+        OpenAI模型的初始化后处理
+        这里会检查API Key是否存在，如果不存在会抛出断言错误
+        这是导致Windows环境下初始化失败的根本原因
+        """
         assert self.api_key is not None, "Please provide api key to access openai api."
         self.client = AsyncOpenAI(
             api_key=self.api_key or "dummy", base_url=self.base_url
