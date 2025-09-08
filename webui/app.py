@@ -8,8 +8,20 @@ import uuid
 import gradio as gr
 import pandas as pd
 from dotenv import load_dotenv
-from gradio_i18n import Translate
-from gradio_i18n import gettext as _
+
+try:
+    from webui.i18n import Translate
+    from webui.i18n import gettext as _
+except ImportError:
+    # 如果新的i18n模块不可用，使用fallback
+    def _(text):
+        return text
+    
+    from contextlib import contextmanager
+    
+    @contextmanager
+    def Translate(*args, **kwargs):
+        yield None
 
 # 从.env文件中加载环境变量
 # 这是解决Windows下环境变量不自动加载问题的关键步骤
