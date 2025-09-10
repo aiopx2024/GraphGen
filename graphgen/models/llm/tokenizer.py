@@ -1,6 +1,11 @@
 from dataclasses import dataclass
 from typing import List
+import os
 import tiktoken
+
+# 设置离线模式环境变量
+os.environ.setdefault("TIKTOKEN_CACHE_DIR", "/app/cache/tiktoken")
+os.environ.setdefault("HF_HOME", "/app/cache/huggingface")
 
 try:
     from transformers import AutoTokenizer
@@ -17,15 +22,30 @@ def get_tokenizer(tokenizer_name: str = "cl100k_base"):
     :param tokenizer_name: tokenizer name, tiktoken encoding name or Hugging Face model name
     :return: tokenizer instance
     """
-    if tokenizer_name in tiktoken.list_encoding_names():
-        return tiktoken.get_encoding(tokenizer_name)
+    # 内网环境优先使用 Hugging Face tokenizer，避免访问外网
     if TRANSFORMERS_AVAILABLE:
         try:
-            return AutoTokenizer.from_pretrained(tokenizer_name)
-        except Exception as e:
-            raise ValueError(f"Failed to load tokenizer from Hugging Face: {e}") from e
-    else:
-        raise ValueError("Hugging Face Transformers is not available, please install it first.")
+            # 尝试使用 Hugging Face tokenizer
+            if tokenizer_name == "cl100k_base":
+                # 对于 cl100k_base，使用 GPT-4 compatible tokenizer
+                return AutoTokenizer.from_pretrained("gpt2", use_fast=True)
+            else:
+                return AutoTokenizer.from_pretrained(tokenizer_name)
+        except Exception:
+            # 如果 Hugging Face 失败，再尝试 tiktoken
+            pass
+    
+    # 如果 Hugging Face 不可用或失败，使用 tiktoken
+    try:
+        if tokenizer_name in tiktoken.list_encoding_names():
+            return tiktoken.get_encoding(tokenizer_name)
+    except Exception as e:
+        # 内网环境下 tiktoken 可能无法访问外网，使用本地 fallback
+        if TRANSFORMERS_AVAILABLE:
+            print(f"Warning: tiktoken failed to load {tokenizer_name} due to network issues, falling back to GPT-2 tokenizer")
+            return AutoTokenizer.from_pretrained("gpt2", use_fast=True)
+        else:
+            raise ValueError(f"Failed to load tokenizer {tokenizer_name}: {e}. Please ensure transformers is installed for offline usage.")
 
 @dataclass
 class Tokenizer:

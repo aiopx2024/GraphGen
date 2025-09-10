@@ -10,6 +10,17 @@ from graphgen.models import Tokenizer
 
 def count_tokens(file, tokenizer_name, data_frame):
     if not file or not os.path.exists(file):
+        # 如果没有文件，返回默认的DataFrame
+        if data_frame is None or len(data_frame) == 0:
+            _default_data = [[
+                "0",
+                "0", 
+                "N/A"
+            ]]
+            return pd.DataFrame(
+                _default_data,
+                columns=["Source Text Token Count", "Estimated Token Usage", "Token Used"]
+            )
         return data_frame
 
     if file.endswith(".jsonl"):
@@ -48,13 +59,25 @@ def count_tokens(file, tokenizer_name, data_frame):
     ]]
 
     try:
+        # 确保列名一致性
+        columns = ["Source Text Token Count", "Estimated Token Usage", "Token Used"]
         new_df = pd.DataFrame(
             _update_data,
-            columns=data_frame.columns
+            columns=columns
         )
         data_frame = new_df
 
     except Exception as e: # pylint: disable=broad-except
         print("[ERROR] DataFrame操作异常:", str(e))
+        # 如果出错，返回默认的DataFrame
+        _default_data = [[
+            str(token_count),
+            str(token_count * 50),
+            "N/A"
+        ]]
+        data_frame = pd.DataFrame(
+            _default_data,
+            columns=["Source Text Token Count", "Estimated Token Usage", "Token Used"]
+        )
 
     return data_frame

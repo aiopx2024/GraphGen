@@ -1,0 +1,37 @@
+services:
+  graphgen:
+    image: graphgen:offline-latest
+    container_name: graphgen-app
+    ports:
+      - "8860:7860"  # 外部8860端口映射到内部7860端口
+    environment:
+      - SYNTHESIZER_MODEL=${SYNTHESIZER_MODEL:-Qwen/Qwen2.5-7B-Instruct}
+      - SYNTHESIZER_BASE_URL=${SYNTHESIZER_BASE_URL:-http://192.168.1.100:8000/v1}
+      - SYNTHESIZER_API_KEY=${SYNTHESIZER_API_KEY:-your_internal_api_key}
+      - TRAINEE_MODEL=${TRAINEE_MODEL:-Qwen/Qwen2.5-7B-Instruct}
+      - TRAINEE_BASE_URL=${TRAINEE_BASE_URL:-http://192.168.1.100:8000/v1}
+      - TRAINEE_API_KEY=${TRAINEE_API_KEY:-your_internal_api_key}
+      - RPM=${RPM:-1000}
+      - TPM=${TPM:-50000}
+      # 内网环境配置
+      - NO_PROXY=localhost,127.0.0.1,192.168.*,10.*,172.16.*,172.17.*,172.18.*,172.19.*,172.20.*,172.21.*,172.22.*,172.23.*,172.24.*,172.25.*,172.26.*,172.27.*,172.28.*,172.29.*,172.30.*,172.31.*
+      - PYTHONHTTPSVERIFY=0  # 忽略SSL证书验证（仅内网环境）
+    volumes:
+      - ./cache:/app/cache
+    restart: unless-stopped
+    # 内网环境优化的健康检查
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:7860/', timeout=5)"]
+      interval: 45s
+      timeout: 15s
+      retries: 5
+      start_period: 90s
+    # 内网环境网络配置 - 使用桥接模式以支持端口映射
+    networks:
+      - graphgen-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+networks:
+  graphgen-network:
+    driver: bridge

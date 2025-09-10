@@ -168,7 +168,11 @@ def run_graphgen(params, progress=gr.Progress()):
         # Load input data
         file = config["input_file"]
         if isinstance(file, list):
-            file = file[0]
+            file = file[0] if file else None
+
+        # 检查文件是否为空
+        if not file:
+            raise gr.Error("请上传文件后再运行GraphGen")
 
         data = []
 
@@ -229,14 +233,28 @@ def run_graphgen(params, progress=gr.Progress()):
 
         data_frame = params.token_counter
         try:
-            _update_data = [
-                [data_frame.iloc[0, 0], data_frame.iloc[0, 1], str(total_tokens)]
-            ]
-            new_df = pd.DataFrame(_update_data, columns=data_frame.columns)
+            # 检查DataFrame是否为空或没有数据
+            if data_frame is None or len(data_frame) == 0:
+                # 创建默认的DataFrame数据
+                _update_data = [
+                    ["未计算", "未计算", str(total_tokens)]
+                ]
+            else:
+                # 使用现有的token计数数据
+                _update_data = [
+                    [data_frame.iloc[0, 0], data_frame.iloc[0, 1], str(total_tokens)]
+                ]
+            new_df = pd.DataFrame(_update_data, columns=["Source Text Token Count", "Expected Token Usage", "Token Used"])
             data_frame = new_df
 
         except Exception as e:
-            raise gr.Error(f"DataFrame operation error: {str(e)}")
+            # 如果出现任何错误，创建默认数据
+            _update_data = [
+                ["计算失败", "计算失败", str(total_tokens)]
+            ]
+            new_df = pd.DataFrame(_update_data, columns=["Source Text Token Count", "Expected Token Usage", "Token Used"])
+            data_frame = new_df
+            print(f"[WARNING] DataFrame操作失败，使用默认值: {str(e)}")
 
         return output_file, gr.DataFrame(
             label="Token Stats",
@@ -501,13 +519,15 @@ with gr.Blocks(title="GraphGen Demo", theme=gr.themes.Glass(), css=css) as demo:
                 label="Token Stats",
                 headers=[
                     "Source Text Token Count",
-                    "Estimated Token Usage",
+                    "Estimated Token Usage", 
                     "Token Used",
                 ],
                 datatype="str",
                 interactive=False,
                 visible=False,
                 wrap=True,
+                # 提供默认数据以避免空 DataFrame 错误
+                value=[["0", "0", "N/A"]]
             )
 
         submit_btn = gr.Button(_("Run GraphGen"))

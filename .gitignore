@@ -181,7 +181,146 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-cache
+# Project specific directories
+cache/
+logs/
+data/
+output/
+temp/
+tmp*/
 *.pyc
 *.html
 .gradio
+
+# Docker related files
+*.tar
+*.tar.gz
+*.tar.bz2
+graphgen-offline-image.tar
+docker-compose.override.yml
+
+# Deployment packages and build artifacts
+GraphGen-Offline-Package/
+*.zip
+*.rar
+*.7z
+deployment-guide.md
+package-*.md
+GraphGen-Simple-Deploy/
+
+# Generated scripts and temporary files
+create-offline-package.ps1
+create-package.bat
+build-offline-image.ps1
+build-offline-image.sh
+test-deployment.sh
+
+# Environment and configuration files
+.env
+.env.local
+.env.*.local
+.env.internal
+.env.production
+.env.development
+
+# API Keys and sensitive information
+*.key
+*.pem
+*.crt
+*.cert
+secrets/
+credentials/
+
+# Backup and temporary files
+*.bak
+*.backup
+*.tmp
+*.swp
+*.swo
+*~
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# IDE and editor files
+.vscode/
+.vs/
+*.sublime-*
+*.code-workspace
+
+# Testing and coverage
+.coverage.*
+.pytest_cache/
+.tox/
+.nox/
+htmlcov/
+
+# Documentation build
+docs/_build/
+docs/build/
+site/
+
+# Model and data files (large files)
+*.model
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+
+# NLTK data
+nltk_data/
+resources/nltk_data/
+
+# Gradio temporary files
+gradio_cached_examples/
+flagged/
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Log files
+*.log
+*.log.*
+log/
+logs/
+
+# Graph visualization outputs
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.pdf
+*.eps
+!resources/**/*.png
+!resources/**/*.jpg
+!resources/**/*.svg
+
+# Knowledge graph cache
+graph_cache/
+kg_cache/
+
+# Generated QA data (keep examples)
+*.jsonl
+!resources/input_examples/*.jsonl
+!resources/output_examples/*.jsonl
+
+# Batch processing results
+batch_results/
+processing_results/
+
+# Memory and profiling
+*.prof
+*.pstats
+memory_profiler_*.txt
