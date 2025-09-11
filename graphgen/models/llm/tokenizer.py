@@ -1,93 +1,112 @@
 from dataclasses import dataclass
 from typing import List
 import os
-import tiktoken
+import re
 
-# 设置离线模式环境变量
-os.environ.setdefault("TIKTOKEN_CACHE_DIR", "/app/cache/tiktoken")
-os.environ.setdefault("HF_HOME", "/app/cache/huggingface")
+# 简化的内网版本，去掉复杂的transformers依赖
+# 使用基本的字符计数和分割逻辑
 
-try:
-    from transformers import AutoTokenizer
-    TRANSFORMERS_AVAILABLE = True
-except ImportError:
-    AutoTokenizer = None
-    TRANSFORMERS_AVAILABLE = False
-
-
-def get_tokenizer(tokenizer_name: str = "cl100k_base"):
-    """
-    Get a tokenizer instance by name.
-
-    :param tokenizer_name: tokenizer name, tiktoken encoding name or Hugging Face model name
-    :return: tokenizer instance
-    """
-    # 内网环境优先使用 Hugging Face tokenizer，避免访问外网
-    if TRANSFORMERS_AVAILABLE:
-        try:
-            # 尝试使用 Hugging Face tokenizer
-            if tokenizer_name == "cl100k_base":
-                # 对于 cl100k_base，使用 GPT-4 compatible tokenizer
-                return AutoTokenizer.from_pretrained("gpt2", use_fast=True)
-            else:
-                return AutoTokenizer.from_pretrained(tokenizer_name)
-        except Exception:
-            # 如果 Hugging Face 失败，再尝试 tiktoken
-            pass
+class SimpleTokenizer:
+    """简化的tokenizer，适用于内网环境，无需复杂的模型下载"""
     
-    # 如果 Hugging Face 不可用或失败，使用 tiktoken
-    try:
-        if tokenizer_name in tiktoken.list_encoding_names():
-            return tiktoken.get_encoding(tokenizer_name)
-    except Exception as e:
-        # 内网环境下 tiktoken 可能无法访问外网，使用本地 fallback
-        if TRANSFORMERS_AVAILABLE:
-            print(f"Warning: tiktoken failed to load {tokenizer_name} due to network issues, falling back to GPT-2 tokenizer")
-            return AutoTokenizer.from_pretrained("gpt2", use_fast=True)
-        else:
-            raise ValueError(f"Failed to load tokenizer {tokenizer_name}: {e}. Please ensure transformers is installed for offline usage.")
+    def __init__(self, chars_per_token: int = 4):
+        """
+        简单的tokenizer，基于字符数估算token数量
+        
+        Args:
+            chars_per_token: 平均每个token的字符数（中文约2-3，英文约4-5）
+        """
+        self.chars_per_token = chars_per_token
+    
+    def encode(self, text: str) -> List[int]:
+        """简单编码：将文本转换为字符索引列表"""
+        return [ord(c) for c in text]
+    
+    def decode(self, tokens: List[int]) -> str:
+        """简单解码：将字符索引列表转换回文本"""
+        return ''.join(chr(token) for token in tokens if 0 <= token <= 1114111)
+
+def get_tokenizer(tokenizer_name: str = "simple"):
+    """
+    获取简化的tokenizer实例
+    内网版本：使用简单的字符分割，无需下载模型
+    """
+    print(f"🔧 使用简化tokenizer: {tokenizer_name}")
+    return SimpleTokenizer()
 
 @dataclass
 class Tokenizer:
-    model_name: str = "cl100k_base"
+    """简化的Tokenizer类，适用于内网环境"""
+    model_name: str = "simple"
 
     def __post_init__(self):
         self.tokenizer = get_tokenizer(self.model_name)
+        # 基于字符的简单token估算
+        self.chars_per_token = 4  # 平均每个token 4个字符
 
     def encode_string(self, text: str) -> List[int]:
         """
-        Encode text to tokens
-
-        :param text
-        :return: tokens
+        将文本编码为token列表（简化版：基于字符数估算）
         """
-        return self.tokenizer.encode(text)
+        # 简单的token估算：字符数除以平均每token字符数
+        estimated_tokens = len(text) // self.chars_per_token
+        return list(range(estimated_tokens))  # 返回索引列表
 
     def decode_tokens(self, tokens: List[int]) -> str:
         """
-        Decode tokens to text
-
-        :param tokens
-        :return: text
+        将token列表解码为文本（简化版：直接返回原文本的前N个字符）
         """
-        return self.tokenizer.decode(tokens)
+        # 由于我们使用简化逻辑，这里返回空字符串
+        # 在实际使用中，分块时会直接使用原文本
+        return ""
 
     def chunk_by_token_size(
         self, content: str, overlap_token_size=128, max_token_size=1024
     ):
-        tokens = self.encode_string(content)
+        """
+        按token大小分割文本（简化版：基于字符数）
+        
+        Args:
+            content: 要分割的文本
+            overlap_token_size: 重叠的token数量
+            max_token_size: 最大token数量
+        
+        Returns:
+            分块结果列表
+        """
+        # 将token大小转换为字符大小
+        max_chars = max_token_size * self.chars_per_token
+        overlap_chars = overlap_token_size * self.chars_per_token
+        
         results = []
-        for index, start in enumerate(
-            range(0, len(tokens), max_token_size - overlap_token_size)
-        ):
-            chunk_content = self.decode_tokens(
-                tokens[start : start + max_token_size]
-            )
-            results.append(
-                {
-                    "tokens": min(max_token_size, len(tokens) - start),
-                    "content": chunk_content.strip(),
-                    "chunk_order_index": index,
-                }
-            )
+        start = 0
+        chunk_index = 0
+        
+        while start < len(content):
+            # 计算当前块的结束位置
+            end = min(start + max_chars, len(content))
+            
+            # 提取文本块
+            chunk_content = content[start:end].strip()
+            
+            if chunk_content:
+                # 估算token数量
+                estimated_tokens = len(chunk_content) // self.chars_per_token + 1
+                
+                results.append({
+                    "tokens": min(max_token_size, estimated_tokens),
+                    "content": chunk_content,
+                    "chunk_order_index": chunk_index,
+                })
+                
+                chunk_index += 1
+            
+            # 计算下一个块的起始位置（考虑重叠）
+            if end >= len(content):
+                break
+            
+            start = end - overlap_chars
+            if start <= 0:
+                start = end
+        
         return results

@@ -4,7 +4,9 @@ python-dotenv
 numpy
 networkx
 graspologic
-tiktoken
+# tiktoken  # 内网版本不需要
+# transformers  # 内网版本不需要  
+# torch  # 内网版本不需要
 pyecharts
 wikipedia
 tenacity

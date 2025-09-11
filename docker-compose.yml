@@ -1,37 +1,63 @@
+version: '3.8'
+
 services:
   graphgen:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: graphgen:offline-latest
     container_name: graphgen-app
     ports:
-      - "8860:7860"  # 外部8860端口映射到内部7860端口
+      - "7860:7860"
     environment:
+      # 妯″瀷閰嶇疆
       - SYNTHESIZER_MODEL=${SYNTHESIZER_MODEL:-Qwen/Qwen2.5-7B-Instruct}
-      - SYNTHESIZER_BASE_URL=${SYNTHESIZER_BASE_URL:-http://192.168.1.100:8000/v1}
-      - SYNTHESIZER_API_KEY=${SYNTHESIZER_API_KEY:-your_internal_api_key}
+      - SYNTHESIZER_BASE_URL=${SYNTHESIZER_BASE_URL:-https://api.siliconflow.cn/v1}
+      - SYNTHESIZER_API_KEY=${SYNTHESIZER_API_KEY:-}
       - TRAINEE_MODEL=${TRAINEE_MODEL:-Qwen/Qwen2.5-7B-Instruct}
-      - TRAINEE_BASE_URL=${TRAINEE_BASE_URL:-http://192.168.1.100:8000/v1}
-      - TRAINEE_API_KEY=${TRAINEE_API_KEY:-your_internal_api_key}
+      - TRAINEE_BASE_URL=${TRAINEE_BASE_URL:-https://api.siliconflow.cn/v1}
+      - TRAINEE_API_KEY=${TRAINEE_API_KEY:-}
+      
+      # 閫熺巼闄愬埗
       - RPM=${RPM:-1000}
       - TPM=${TPM:-50000}
-      # 内网环境配置
-      - NO_PROXY=localhost,127.0.0.1,192.168.*,10.*,172.16.*,172.17.*,172.18.*,172.19.*,172.20.*,172.21.*,172.22.*,172.23.*,172.24.*,172.25.*,172.26.*,172.27.*,172.28.*,172.29.*,172.30.*,172.31.*
-      - PYTHONHTTPSVERIFY=0  # 忽略SSL证书验证（仅内网环境）
+      
+      # 绂荤嚎妯″紡璁剧疆
+      - GRAPHGEN_OFFLINE_MODE=true
+      - HF_DATASETS_OFFLINE=1
+      - TRANSFORMERS_OFFLINE=1
+      
+      # 缂撳瓨璺緞
+      - HF_HOME=/app/cache/huggingface
+      - TRANSFORMERS_CACHE=/app/cache/huggingface/transformers
+      - HF_DATASETS_CACHE=/app/cache/huggingface/datasets
+      - TIKTOKEN_CACHE_DIR=/app/cache/tiktoken
+      - NLTK_DATA=/app/resources/nltk_data
+      
     volumes:
-      - ./cache:/app/cache
+      # 鎸佷箙鍖栫紦瀛樺拰鏃ュ織
+      - graphgen_cache:/app/cache
+      - graphgen_logs:/app/logs
+      
     restart: unless-stopped
-    # 内网环境优化的健康检查
+    
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:7860/', timeout=5)"]
-      interval: 45s
-      timeout: 15s
-      retries: 5
-      start_period: 90s
-    # 内网环境网络配置 - 使用桥接模式以支持端口映射
-    networks:
-      - graphgen-network
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      test: ["CMD", "curl", "-f", "http://localhost:7860/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+      
+    # 璧勬簮闄愬埗锛堝彲閫夛級
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
 
-networks:
-  graphgen-network:
-    driver: bridge
+volumes:
+  graphgen_cache:
+    driver: local
+  graphgen_logs:
+    driver: local
