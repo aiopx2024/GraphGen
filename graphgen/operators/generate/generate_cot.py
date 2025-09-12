@@ -61,16 +61,25 @@ async def generate_cot(
 
     async def _generate_from_single_community(
         c_id: int, nodes: List[str]
-    ) -> Tuple[int, Tuple[str, str, str]]:
+    ) -> Tuple[int, Tuple[str, str, str, Dict]]:
         """Summarize a single community."""
         async with semaphore:
             entities: List[str] = []
             relationships: List[str] = []
+            source_chunks = set()
+            doc_ids = set()
+            entities_used = []
+            relations_used = []
 
             for n in nodes:
                 node_data = await graph_storage.get_node(n)
                 if node_data is not None:
                     entities.append(f"({n}: {node_data.get('description')})")
+                    entities_used.append(n)
+                    
+                    # 收集溯源信息
+                    if "source_id" in node_data:
+                        source_chunks.update(node_data["source_id"].split("<SEP>"))
 
                 edges = await graph_storage.get_node_edges(n)
                 for edge in edges:
@@ -80,6 +89,11 @@ async def generate_cot(
                         relationships.append(
                             f"({n}) - [{edge_data['description']}] -> ({target})"
                         )
+                        relations_used.append((n, target, edge_data['description']))
+                        
+                        # 收集边的溯源信息
+                        if "source_id" in edge_data:
+                            source_chunks.update(edge_data["source_id"].split("<SEP>"))
 
             entities_str = "\n".join(entities)
             relationships_str = "\n".join(relationships)
@@ -133,7 +147,16 @@ async def generate_cot(
             # 调用后记录日志（仅第一次）
             log_llm_call_once("cot_answer_generation", prompt, cot_answer, is_before=False)
 
-            return c_id, (question, reasoning_path, cot_answer)
+            # 构建溯源信息
+            source_metadata = {
+                "source_chunks": list(source_chunks),
+                "chunk_contents": {},  # CoT基于社区检测，不直接映射到具体chunks
+                "doc_ids": list(doc_ids),
+                "entities_used": entities_used,
+                "relations_used": relations_used
+            }
+
+            return c_id, (question, reasoning_path, cot_answer, source_metadata)
 
     cid_nodes = list(communities.items())
 
@@ -146,11 +169,22 @@ async def generate_cot(
         desc="[Generating COT] Generating CoT data from communities",
         unit="community",
     ):
-        cid, (q, r, a) = await coro
+        cid, (q, r, a, source_metadata) = await coro
         results[compute_content_hash(q)] = {
             "question": q,
             "reasoning_path": r,
             "answer": a,
+            "metadata": {
+                "qa_type": "cot",
+                "generation_method": "community_detection",
+                "community_id": cid,
+                "source_tracing": source_metadata,
+                "subgraph_info": {
+                    "nodes_count": len(communities[cid]),
+                    "edges_count": len([r for r in source_metadata["relations_used"]]),
+                    "max_depth": 1  # CoT基于社区，深度为1
+                }
+            }
         }
 
     return results

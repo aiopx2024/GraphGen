@@ -8,7 +8,7 @@ input_file: resources/input_examples/raw_demo.jsonl  # 输入文件路径，支�
 
 # === 输出配置 ===
 output_data_type: cot        # 输出数据类型: atomic(原子性), aggregated(聚合型), multi_hop(多跳推理), cot(思维链)
-output_data_format: Sharegpt  # 输出格式: Alpaca(指令微调格式), ShareGPT(对话格式), ChatML(聊天标记语言)
+output_data_format: ChatML  # 输出格式: Alpaca(指令微调格式), ShareGPT(对话格式), ChatML(聊天标记语言)
 
 # === 分词器配置 ===
 tokenizer: cl100k_base  # 用于Token计数的分词器，支持tiktoken分词器名称和本地分词器路径

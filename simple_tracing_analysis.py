@@ -59,7 +59,7 @@ def main():
     print("=" * 50)
     
     # 查找QA文件
-    qa_files = glob.glob("/mnt/d/git/GraphGen/cache/data/graphgen/*/qa-*.json")
+    qa_files = glob.glob("cache/data/graphgen/*/qa-*.json")
     if not qa_files:
         print("❌ 未找到QA文件")
         return

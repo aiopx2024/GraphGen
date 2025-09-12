@@ -4,7 +4,7 @@
 
 # === 输入配置 ===
 input_data_type: raw  # 输入数据类型: raw(原始文档) 或 chunked(预分块数据)
-input_file: resources/input_examples/raw_demo.jsonl  # 输入文件路径，支持json、jsonl、txt格式，参考resources/input_examples中的示例
+input_file: resources/input_examples/技术通讯_交易中心数字证书的前世今生_trunk.txt  # 输入文件路径，支持json、jsonl、txt格式，参考resources/input_examples中的示例
 
 # === 输出配置 ===
 output_data_type: multi_hop  # 输出数据类型: atomic(原子性), aggregated(聚合型), multi_hop(多跳推理), cot(思维链)
@@ -32,7 +32,7 @@ traverse_strategy:
   edge_sampling: max_loss       # 边采样策略: random(随机), max_loss(最大损失优先), min_loss(最小损失优先)
   expand_method: max_width      # 扩展方法: max_width(宽度优先), max_depth(深度优先)
   isolated_node_strategy: ignore  # 孤立节点处理策略: ignore(忽略), add(添加)
-  max_depth: 1                  # 图遍历的最大深度
-  max_extra_edges: 2           # 每个方向的最大边数（当expand_method="max_width"时）
+  max_depth: 3                  # 图遍历的最大深度（多跳推理需要更深的遍历）
+  max_extra_edges: 10           # 每个方向的最大边数（多跳推理需要更多边连接）
   max_tokens: 256              # 限制输入长度（当expand_method="max_tokens"时）
   loss_strategy: only_edge     # 损失计算重点: only_edge(仅边), both(边和节点)
