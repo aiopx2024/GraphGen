@@ -275,51 +275,24 @@ def run_graphgen(params, progress=gr.Progress()):
     # 如需清理，可手动删除 cache 目录下的子文件夹
 
 
-with gr.Blocks(title="GraphGen Demo", theme=gr.themes.Glass(), css=css) as demo:
-    # Header
-    gr.Image(
-        value=os.path.join(root_dir, "resources", "images", "logo.png"),
-        label="GraphGen Banner",
-        elem_id="banner",
-        interactive=False,
-        container=False,
-        show_download_button=False,
-        show_fullscreen_button=False,
-    )
+with gr.Blocks(title="KGMentor Demo", theme=gr.themes.Glass(), css=css) as demo:
+    # Header (logo removed)
     lang_btn = gr.Radio(
         choices=[
-            ("English", "en"),
             ("简体中文", "zh"),
         ],
-        value="en",
+        value="zh",
         # label=_("Language"),
         render=False,
         container=False,
         elem_classes=["center-row"],
     )
 
-    gr.HTML(
-        """
-    <div style="display: flex; gap: 8px; margin-left: auto; align-items: center; justify-content: center;">
-        <a href="https://github.com/open-sciencelab/GraphGen/releases">
-            <img src="https://img.shields.io/badge/Version-v0.1.0-blue" alt="Version">
-        </a>
-        <a href="https://graphgen-docs.example.com">
-            <img src="https://img.shields.io/badge/Docs-Latest-brightgreen" alt="Documentation">
-        </a>
-        <a href="https://github.com/open-sciencelab/GraphGen/issues/10">
-            <img src="https://img.shields.io/github/stars/open-sciencelab/GraphGen?style=social" alt="GitHub Stars">
-        </a>
-        <a href="https://arxiv.org/abs/2505.20416">
-            <img src="https://img.shields.io/badge/arXiv-pdf-yellow" alt="arXiv">
-        </a>
-    </div>
-    """
-    )
+    # Version badges and links removed
     with Translate(
         os.path.join(root_dir, "webui", "translation.json"),
         lang_btn,
-        placeholder_langs=["en", "zh"],
+        placeholder_langs=["zh"],
         persistant=False,  # True to save the language setting in the browser. Requires gradio >= 5.6.0
     ):
         lang_btn.render()
@@ -328,7 +301,7 @@ with gr.Blocks(title="GraphGen Demo", theme=gr.themes.Glass(), css=css) as demo:
             value="# "
             + _("Title")
             + "\n\n"
-            + "### [GraphGen](https://github.com/open-sciencelab/GraphGen) "
+            + _("### [GraphGen](https://github.com/open-sciencelab/GraphGen) ")
             + _("Intro")
         )
 
@@ -530,7 +503,7 @@ with gr.Blocks(title="GraphGen Demo", theme=gr.themes.Glass(), css=css) as demo:
                 value=[["0", "0", "N/A"]]
             )
 
-        submit_btn = gr.Button(_("Run GraphGen"))
+        submit_btn = gr.Button(_("开始合成"))
 
         # Test Connection
         test_connection_btn.click(

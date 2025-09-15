@@ -1,7 +1,7 @@
 {
   "en": {
     "Title": "✨Easy-to-use LLM Training Data Generation Framework✨",
-    "### [GraphGen](https://github.com/open-sciencelab/GraphGen) ": "### [GraphGen](https://github.com/open-sciencelab/GraphGen) ",
+    "### [GraphGen](https://github.com/open-sciencelab/GraphGen) ": "### KGMentor ",
     "Intro": "is a framework for synthetic data generation guided by knowledge graphs, designed to tackle challenges for knowledge-intensive QA generation. \n\nBy uploading your text chunks (such as knowledge in agriculture, healthcare, or marine science) and filling in the LLM API key, you can generate the training data required by **[LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory)** and **[xtuner](https://github.com/InternLM/xtuner)** online. We will automatically delete user information after completion.",
     "Use Trainee Model": "Use Trainee Model to identify knowledge blind spots, please keep disable for SiliconCloud",
     "Synthesizer URL Info": "Base URL for the Synthesizer Model API, use SiliconFlow as default",
@@ -15,24 +15,24 @@
     "Test Connection": "Test Connection",
     "Upload File": "Upload File",
     "Example Files": "Example Files",
-    "Run GraphGen": "Run GraphGen"
+    "Run GraphGen": "Run KGMentor"
   },
   "zh": {
-    "Title": "✨开箱即用的LLM训练数据生成框架✨",
-    "### [GraphGen](https://github.com/open-sciencelab/GraphGen) ": "### [GraphGen](https://github.com/open-sciencelab/GraphGen) ",
-    "Intro": "是一个基于知识图谱的数据合成框架，旨在知识密集型任务中生成问答。\n\n 上传你的文本块（如农业、医疗、海洋知识），填写 LLM api key，即可在线生成 **[LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory)**、**[xtuner](https://github.com/InternLM/xtuner)** 所需训练数据。结束后我们将自动删除用户信息。",
-    "Use Trainee Model": "使用Trainee Model来识别知识盲区，使用硅基流动时请保持禁用",
-    "Synthesizer URL Info": "调用合成模型API的URL，默认使用硅基流动",
-    "Synthesizer Model Info": "用于构建知识图谱和生成问答的模型",
-    "Trainee URL Info": "调用学生模型API的URL，默认使用硅基流动",
-    "Trainee Model Info": "用于训练的模型",
-    "SiliconFlow Token for Trainee Model": "SiliconFlow Token for Trainee Model",
+    "Title": "基于知识图谱的数据合成预研",
+    "### [GraphGen](https://github.com/open-sciencelab/GraphGen) ": " ",
+    "Intro": "基于知识图谱的数据合成，旨在知识密集型任务中生成问答。\n\n 上传你的文本块（txt），填写 LLM api key，即可在线生成所需训练数据。\n 或者在后台执行命令: \npython -m graphgen.generate --config_file graphgen/configs/cot_config.yaml --output_dir cache/",
+    "Use Trainee Model": "使用ECE识别学生模型的知识盲区(勾选该选项则须配置学生模型相关信息)",
+    "Synthesizer URL Info": "用于合成数据的模型BASE_URL",
+    "Synthesizer Model Info": "合成模型MODEL_NAME",
+    "Trainee URL Info": "学生模型BASE_URL",
+    "Trainee Model Info": "学生模型MODEL_NAME",
+    "SiliconFlow Token for Trainee Model": "学生模型API_KEY",
     "Model Config": "模型配置",
     "Generation Config": "生成配置",
-    "SiliconFlow Token": "SiliconFlow Token",
+    "SiliconFlow Token": "合成模型API_KEY",
     "Test Connection": "测试接口",
     "Upload File": "上传文件",
     "Example Files": "示例文件",
-    "Run GraphGen": "运行GraphGen"
+    "Run GraphGen": "开始合成"
   }
 }
