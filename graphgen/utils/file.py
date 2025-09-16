@@ -15,9 +15,11 @@ def read_file(input_file: str) -> list:
         with open(input_file, "r", encoding="utf-8") as f:
             data = json.load(f)
     elif input_file.endswith(".txt"):
+        # txt文件作为单个完整文档处理，让GraphGen的tokenizer进行智能切分
+        # 不要按行分割，这会破坏语义完整性
         with open(input_file, "r", encoding="utf-8") as f:
-            data = [line.strip() for line in f if line.strip()]
-            data = [{"content": line} for line in data]
+            content = f.read()
+        data = [{"content": content}]
     else:
         raise ValueError(f"Unsupported file format: {input_file}")
 
