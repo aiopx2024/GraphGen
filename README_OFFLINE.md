@@ -50,6 +50,103 @@ docker-compose down
 
 打开浏览器访问：http://localhost:7860
 
+## 📦 镜像打包与传输
+
+### 构建阶段（外网环境）
+
+#### 前置要求
+- Docker Desktop 或 Docker Engine
+- Git
+- 网络连接（用于下载依赖）
+
+#### 构建离线镜像
+```bash
+# 1. 准备代码
+git clone <your-repo>
+cd GraphGen
+
+# 2. 构建离线镜像
+docker-compose build
+```
+
+#### 打包为tar文件
+构建完成后，需要将镜像打包为tar文件以便传输到内网环境：
+
+```bash
+# 将镜像保存为tar文件
+docker save -o graphgen-offline-image.tar graphgen:offline-latest
+
+# 验证镜像
+docker images graphgen:offline-latest
+```
+
+### 传输阶段
+
+将以下文件传输到内网服务器：
+```
+graphgen-offline-image.tar      # Docker镜像（主要文件）
+docker-compose.yml             # Docker Compose配置
+.env.example                   # 环境变量模板
+```
+
+### 部署阶段（内网环境）
+
+#### 前置要求
+- Docker Engine
+- 至少4GB内存
+- 足够的存储空间（建议10GB+）
+- 内网LLM API服务（如本地部署的模型服务）
+
+#### 加载Docker镜像
+```bash
+# 加载镜像
+docker load -i graphgen-offline-image.tar
+
+# 验证镜像
+docker images graphgen:offline-latest
+```
+
+#### 配置环境变量
+创建 `.env` 文件：
+```env
+# LLM API配置（关键：使用内网地址）
+SYNTHESIZER_MODEL=Qwen/Qwen2.5-7B-Instruct
+SYNTHESIZER_BASE_URL=http://your-internal-llm-api:8000/v1
+SYNTHESIZER_API_KEY=your_internal_api_key
+
+TRAINEE_MODEL=Qwen/Qwen2.5-7B-Instruct
+TRAINEE_BASE_URL=http://your-internal-llm-api:8000/v1
+TRAINEE_API_KEY=your_internal_api_key
+
+# API调用限制
+RPM=1000
+TPM=50000
+```
+
+#### 创建数据目录
+```bash
+mkdir -p cache logs data
+chmod 755 cache logs data
+```
+
+#### 启动服务
+```bash
+# 使用Docker Compose启动服务
+docker-compose up -d
+```
+
+#### 验证部署
+```bash
+# 检查容器状态
+docker ps
+
+# 查看日志
+docker logs graphgen-app
+
+# 健康检查
+curl http://localhost:7860/
+```
+
 ## 🔧 详细配置
 
 ### 离线模式环境变量

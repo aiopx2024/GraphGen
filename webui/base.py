@@ -23,9 +23,15 @@ class GraphGenParams:
     trainee_model: str
     api_key: str
     chunk_size: int
-    rpm: int
-    tpm: int
-    quiz_samples: int
-    trainee_url: str
-    trainee_api_key: str
-    token_counter: Any
+    # 新增的chunking参数
+    chunk_overlap_size: int = 128
+    chunking_strategy: str = "semantic"
+    preserve_boundaries: bool = True
+    min_chunk_size: int = 100
+    language_aware: bool = True
+    rpm: int = 1000
+    tpm: int = 50000
+    quiz_samples: int = 2
+    trainee_url: str = ""
+    trainee_api_key: str = ""
+    token_counter: Any = None

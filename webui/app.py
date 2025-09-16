@@ -133,7 +133,16 @@ def run_graphgen(params, progress=gr.Progress()):
             "isolated_node_strategy": params.isolated_node_strategy,
             "loss_strategy": params.loss_strategy,
         },
-        "chunk_size": params.chunk_size,
+        "chunk_size": params.chunk_size,  # 保持向后兼容
+        "chunking": {
+            "chunk_size": params.chunk_size,
+            "overlap_size": params.chunk_overlap_size,
+            "strategy": params.chunking_strategy,
+            "preserve_boundaries": params.preserve_boundaries,
+            "min_chunk_size": params.min_chunk_size,
+            "language_aware": params.language_aware,
+            "boundary_markers": ["\u3002", "\uff01", "\uff1f", ".", "!", "?", "\n\n"]
+        },
     }
 
     env = {
@@ -185,16 +194,12 @@ def run_graphgen(params, progress=gr.Progress()):
             with open(file, "r", encoding="utf-8") as f:
                 data.extend(json.load(f))
         elif file.endswith(".txt"):
-            # 读取文件后根据chunk_size转成raw格式的数据
+            # txt文件作为单个完整文档处理，让GraphGen的tokenizer进行智能切分
             data_type = "raw"
-            content = ""
             with open(file, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-                for line in lines:
-                    content += line.strip() + " "
-            size = int(config.get("chunk_size", 512))
-            chunks = [content[i : i + size] for i in range(0, len(content), size)]
-            data.extend([{"content": chunk} for chunk in chunks])
+                content = f.read()
+            # 不要在这里预切分！保持文档完整性，交给GraphGen处理
+            data.extend([{"content": content}])
         else:
             raise ValueError(f"Unsupported file type: {file}")
 
@@ -352,6 +357,42 @@ with gr.Blocks(title="KGMentor Demo", theme=gr.themes.Glass(), css=css) as demo:
                 value=512,
                 step=256,
                 interactive=True,
+            )
+            chunk_overlap_size = gr.Slider(
+                label="Chunk Overlap Size",
+                minimum=50,
+                maximum=512,
+                value=128,
+                step=50,
+                interactive=True,
+            )
+            chunking_strategy = gr.Radio(
+                choices=["simple", "semantic", "hierarchical"],
+                label="Chunking Strategy",
+                value="semantic",
+                interactive=True,
+                info="Simple: 简单滑动窗口; Semantic: 语义感知; Hierarchical: 层次化"
+            )
+            preserve_boundaries = gr.Checkbox(
+                label="Preserve Boundaries",
+                value=True,
+                interactive=True,
+                info="是否保持语义边界（句子、段落）"
+            )
+            min_chunk_size = gr.Slider(
+                label="Min Chunk Size",
+                minimum=50,
+                maximum=500,
+                value=100,
+                step=25,
+                interactive=True,
+                info="最小chunk大小，避免产生过小的片段"
+            )
+            language_aware = gr.Checkbox(
+                label="Language Aware",
+                value=True,
+                interactive=True,
+                info="是否启用语言感知的token估算"
             )
             tokenizer = gr.Textbox(
                 label="Tokenizer", value="cl100k_base", interactive=True
@@ -577,12 +618,17 @@ with gr.Blocks(title="KGMentor Demo", theme=gr.themes.Glass(), css=css) as demo:
                     trainee_model=args[14],
                     api_key=args[15],
                     chunk_size=args[16],
-                    rpm=args[17],
-                    tpm=args[18],
-                    quiz_samples=args[19],
-                    trainee_url=args[20],
-                    trainee_api_key=args[21],
-                    token_counter=args[22],
+                    chunk_overlap_size=args[17],
+                    chunking_strategy=args[18],
+                    preserve_boundaries=args[19],
+                    min_chunk_size=args[20],
+                    language_aware=args[21],
+                    rpm=args[22],
+                    tpm=args[23],
+                    quiz_samples=args[24],
+                    trainee_url=args[25],
+                    trainee_api_key=args[26],
+                    token_counter=args[27],
                 )
             ),
             inputs=[
@@ -603,6 +649,11 @@ with gr.Blocks(title="KGMentor Demo", theme=gr.themes.Glass(), css=css) as demo:
                 trainee_model,
                 api_key,
                 chunk_size,
+                chunk_overlap_size,
+                chunking_strategy,
+                preserve_boundaries,
+                min_chunk_size,
+                language_aware,
                 rpm,
                 tpm,
                 quiz_samples,

@@ -18,6 +18,24 @@ search:
   enabled: false  # 是否启用外部搜索来补充知识图谱信息
   search_types: ["google"]  # 搜索引擎类型，支持: google, bing, uniprot, wikipedia
 
+# === 文本分块配置 ===
+# 控制输入文档的分块方式和参数
+chunking:
+  chunk_size: 1536          # 最大chunk token数（聚合型需要更大的上下文）
+  overlap_size: 200         # 重叠token数（更多重叠保持连续性）
+  strategy: "semantic"      # 切分策略: simple(简单滑动窗口), semantic(语义感知), hierarchical(层次化)
+  preserve_boundaries: true # 是否保持语义边界（句子、段落）
+  min_chunk_size: 150       # 最小chunk大小，避免产生过小的片段
+  language_aware: true      # 是否启用语言感知的token估算
+  boundary_markers:         # 语义边界标记
+    - "。"    # 中文句号
+    - "！"    # 中文感叹号
+    - "？"    # 中文问号
+    - "."     # 英文句号
+    - "!"     # 英文感叹号
+    - "?"     # 英文问号
+    - "\n\n" # 段落分隔符
+
 # === 知识缺口识别策略 ===
 # 通过Quiz测试和判断来识别LLM对知识点的掌握程度
 quiz_and_judge_strategy:

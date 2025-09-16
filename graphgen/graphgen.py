@@ -49,10 +49,20 @@ class GraphGen:
     synthesizer_llm_client: OpenAIModel = None
     trainee_llm_client: OpenAIModel = None
 
-    # text chunking
-    # TODO: make it configurable
+    # text chunking - 从配置文件中读取
     chunk_size: int = 1024
     chunk_overlap_size: int = 100
+    chunking_config: dict = field(
+        default_factory=lambda: {
+            "chunk_size": 1024,
+            "overlap_size": 128,
+            "strategy": "semantic",
+            "preserve_boundaries": True,
+            "min_chunk_size": 100,
+            "language_aware": True,
+            "boundary_markers": ["\u3002", "\uff01", "\uff1f", ".", "!", "?", "\n\n"]
+        }
+    )
 
     # search
     search_config: dict = field(
@@ -90,6 +100,17 @@ class GraphGen:
             tokenizer_instance=self.tokenizer_instance,
         )
         self.search_config = self.config["search"]
+
+        # 初始化chunking配置
+        if "chunking" in self.config:
+            self.chunking_config.update(self.config["chunking"])
+            # 更新旧的chunk参数以保持向后兼容
+            self.chunk_size = self.chunking_config["chunk_size"]
+            self.chunk_overlap_size = self.chunking_config["overlap_size"]
+        else:
+            # 如果配置文件中没有chunking配置，使用默认值
+            self.chunking_config["chunk_size"] = self.chunk_size
+            self.chunking_config["overlap_size"] = self.chunk_overlap_size
 
         if "traverse_strategy" in self.config:
             self.traverse_strategy = TraverseStrategy(
@@ -166,7 +187,14 @@ class GraphGen:
                         "full_doc_id": doc_key,
                     }
                     for dp in self.tokenizer_instance.chunk_by_token_size(
-                        doc["content"], self.chunk_overlap_size, self.chunk_size
+                        doc["content"],
+                        overlap_token_size=self.chunking_config["overlap_size"],
+                        max_token_size=self.chunking_config["chunk_size"],
+                        strategy=self.chunking_config["strategy"],
+                        preserve_boundaries=self.chunking_config["preserve_boundaries"],
+                        min_chunk_size=self.chunking_config["min_chunk_size"],
+                        language_aware=self.chunking_config["language_aware"],
+                        boundary_markers=self.chunking_config["boundary_markers"]
                     )
                 }
                 inserting_chunks.update(chunks)
