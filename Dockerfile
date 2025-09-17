@@ -1,34 +1,65 @@
-# GraphGen 内网部署 Dockerfile
-# 简化版本，无需下载复杂的tokenizer模型
+# GraphGen 开发/调试版 Dockerfile
+# 包含完整调试工具，优化分层构建
 
 FROM python:3.10-slim
 
-# 设置环境变量
+# ===== Layer 1: 环境变量（几乎不变） =====
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 设置工作目录
+# ===== Layer 2: 工作目录（几乎不变） =====
 WORKDIR /app
 
-# 安装系统依赖（很少变化，可以充分利用缓存）
+# ===== Layer 3: 系统依赖 - 基础工具（很少变化） =====
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+    # 基础工具
     curl \
+    wget \
+    ca-certificates \
+    # 编辑器
+    vim \
+    nano \
+    less \
+    # 进程管理
+    procps \
+    lsof \
+    # 文本处理
+    jq \
+    # 开发工具
+    git \
+    # 用户管理（为后续sudo准备）
+    sudo \
+    && apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    # 配置vim
+    echo "set number\nset expandtab\nset tabstop=4\nset shiftwidth=4\nset encoding=utf-8" > /etc/vim/vimrc.local
+
+# ===== Layer 4: 系统依赖 - 扩展工具（偶尔变化） =====
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    # 进程监控
+    htop \
+    # 网络工具
+    iputils-ping \
+    net-tools \
+    telnet \
+    dnsutils \
+    # 系统调试
+    strace \
+    tree \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# 先复制requirements文件（依赖变化时才重新安装）
+# ===== Layer 5: Python依赖（偶尔变化） =====
 COPY requirements.txt .
-
-# 安装Python依赖（requirements.txt不变时使用缓存）
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    # 开发工具
+    pip install ipython ipdb
 
-# 创建基本目录结构
-RUN mkdir -p /app/cache /app/logs
-
-# 预下载NLTK数据（保留这个，因为比较简单且有用）
+# ===== Layer 6: NLTK数据（很少变化） =====
 RUN python -c "\
 import os; \
 import nltk; \
@@ -40,21 +71,15 @@ nltk.download('stopwords', download_dir='/app/resources/nltk_data', quiet=True);
 print('✅ NLTK数据下载完成')\
 "
 
-# 设置NLTK数据路径
+# ===== Layer 7: 用户和权限（很少变化） =====
+RUN mkdir -p /app/cache /app/logs && \
+    useradd -m -u 1000 graphgen && \
+    # 给开发用户sudo权限
+    echo "graphgen ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
+    chown -R graphgen:graphgen /app/cache /app/logs
+
+# ===== Layer 8: 环境配置（很少变化） =====
 ENV NLTK_DATA=/app/resources/nltk_data
-
-# 创建非-root用户
-RUN useradd -m -u 1000 graphgen
-
-# === 以下是应用代码相关，代码变化时才重新执行 ===
-
-# 复制应用代码（放在最后，代码变化时不影响上面的缓存）
-COPY --chown=graphgen:graphgen . .
-
-# 设置目录权限
-RUN chown -R graphgen:graphgen /app/cache /app/logs
-
-# 默认环境变量
 ENV SYNTHESIZER_MODEL="Qwen/Qwen2.5-7B-Instruct"
 ENV SYNTHESIZER_BASE_URL="https://api.siliconflow.cn/v1"
 ENV SYNTHESIZER_API_KEY=""
@@ -64,15 +89,28 @@ ENV TRAINEE_API_KEY=""
 ENV RPM="1000"
 ENV TPM="50000"
 
-# 暴露端口
-EXPOSE 7860
+# ===== Layer 9: 应用代码（经常变化，放在最后！） =====
+COPY --chown=graphgen:graphgen . .
 
-# 切换到非root用户
+# ===== Layer 10: 用户配置（很少变化） =====
 USER graphgen
+
+# 设置bash别名，方便使用
+RUN echo "alias ll='ls -la'" >> ~/.bashrc && \
+    echo "alias ..='cd ..'" >> ~/.bashrc && \
+    echo "alias py='python'" >> ~/.bashrc && \
+    echo "alias ipy='ipython'" >> ~/.bashrc && \
+    echo "alias gs='git status'" >> ~/.bashrc && \
+    echo "alias gd='git diff'" >> ~/.bashrc && \
+    echo "set -o vi" >> ~/.bashrc && \
+    echo "PS1='\[\033[01;32m\]graphgen@dev\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]$ '" >> ~/.bashrc
+
+# ===== Layer 11: 运行配置（很少变化） =====
+EXPOSE 7860
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:7860/ || exit 1
 
-# 启动命令
+# 启动命令（可以被覆盖进入bash）
 CMD ["python", "-m", "webui.app"]
